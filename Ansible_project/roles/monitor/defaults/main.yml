@@ -1,0 +1,20 @@
+---
+# Monitor installation settings
+monitor_auto_mode: true
+monitor_temp_dir: /tmp/monitor-install
+
+# Prometheus settings
+prometheus_port: 9090
+prometheus_user: admin
+prometheus_password: prometheus098
+
+# N9E (Nightingale) settings
+n9e_port: 17000
+n9e_user: root
+n9e_password: root.2020
+
+# Database settings
+monitor_db_password: asfhieghsid232
+
+# Cleanup settings
+cleanup_after_install: true

@@ -1,0 +1,11 @@
+# 日志服务器
+[es01_server]
+es01-server ansible_host=192.168.1.101 ansible_user=root ansible_ssh_pass='password1'
+
+# web服务器 
+[web_server]
+web-server ansible_host=192.168.1.101 ansible_user=root ansible_ssh_pass='password1'
+
+# 监控服务器 
+[monitor_server]
+monitor-server ansible_host=192.168.1.101 ansible_user=root ansible_ssh_pass='password1'

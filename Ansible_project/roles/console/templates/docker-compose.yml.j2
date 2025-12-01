@@ -1,0 +1,12 @@
+version: '3'
+services:
+  console:
+    image: {{ console_image_name }}:{{ console_image_tag }}
+    container_name: {{ console_container_name }}
+    networks:
+      - {{ docker_network_name }}
+    restart: always
+
+networks:
+  {{ docker_network_name }}:
+    external: true 

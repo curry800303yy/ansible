@@ -1,0 +1,10 @@
+---
+- name: restart nginx
+  become: true
+  shell: docker restart nginx
+  listen: restart nginx
+
+- name: reload nginx
+  become: true
+  shell: docker exec nginx nginx -s reload
+  listen: reload nginx

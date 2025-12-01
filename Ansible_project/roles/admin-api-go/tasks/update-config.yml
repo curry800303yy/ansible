@@ -1,0 +1,9 @@
+---
+# Admin-API-Go 配置更新任务
+
+- name: "生成 admin-api-go 配置文件"
+  template:
+    src: config.yaml.j2
+    dest: "{{ admin_api_go_work_dir }}/config.yaml"
+    backup: true
+    mode: '0644'

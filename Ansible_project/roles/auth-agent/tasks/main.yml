@@ -1,0 +1,110 @@
+# roles/auth-agent/tasks/main.yml
+---
+- name: 创建Auth Agent安装目录
+  file:
+    path: "{{ auth_agent_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建数据目录
+  file:
+    path: "{{ auth_agent_data_dir }}"
+    state: directory
+    mode: '0777'
+
+- name: 拷贝Docker镜像文件
+  copy:
+    src: "{{ auth_agent_image_file }}"
+    dest: "{{ auth_agent_install_dir }}/{{ auth_agent_image_file }}"
+    mode: '0644'
+  when: auth_agent_load_image | default(true) | bool
+
+- name: 加载Docker镜像
+  shell: docker load -i {{ auth_agent_install_dir }}/{{ auth_agent_image_file }}
+  args:
+    executable: /bin/bash
+  when: auth_agent_load_image | default(true) | bool
+
+- name: 自动检测网卡名称
+  shell: |
+    # 获取第一个非lo的网卡名称
+    ip route | grep default | awk '{print $5}' | head -1
+  register: detected_interface
+  when: auth_agent_auto_detect_interface | default(true) | bool
+
+- name: 设置网卡名称
+  set_fact:
+    network_interface: "{{ detected_interface.stdout if auth_agent_auto_detect_interface | default(true) | bool else auth_agent_network_interface }}"
+
+- name: 获取宿主机MAC地址
+  shell: |
+    if [ -r "/sys/class/net/{{ network_interface }}/address" ]; then
+      cat /sys/class/net/{{ network_interface }}/address
+    elif command -v ip >/dev/null 2>&1; then
+      ip link show {{ network_interface }} | awk '/link\/ether/ {print $2}'
+    elif command -v ifconfig >/dev/null 2>&1; then
+      ifconfig {{ network_interface }} | awk '/ether/ {print $2}'
+    fi
+  register: host_mac_result
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: host_mac_result.stdout | trim == ""
+
+- name: 显示检测到的网卡和MAC地址
+  debug:
+    msg:
+      - "检测到的网卡: {{ network_interface }}"
+      - "MAC地址: {{ host_mac_result.stdout }}"
+
+- name: 创建Docker网络
+  shell: docker network create {{ auth_agent_network_name }} || true
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+
+- name: 拷贝docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ auth_agent_install_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: 启动Auth Agent服务
+  shell: |
+    cd {{ auth_agent_install_dir }}
+    docker compose up -d
+  args:
+    executable: /bin/bash
+
+- name: 等待服务启动
+  wait_for:
+    host: localhost
+    port: "{{ auth_agent_port_1 }}"
+    delay: 10
+    timeout: 60
+
+- name: 设置lease权限
+  file:
+    path: "{{ auth_agent_data_dir }}"
+    mode: '0777'
+    recurse: true
+
+- name: 检查Auth Agent容器状态
+  shell: docker ps --filter "name={{ auth_agent_container_name }}"
+  register: auth_agent_container_status
+
+- name: 显示Auth Agent容器状态
+  debug:
+    msg: "{{ auth_agent_container_status.stdout }}"
+
+- name: 显示Auth Agent部署完成信息
+  debug:
+    msg:
+      - "=========================================="
+      - "Auth Agent部署完成！"
+      - "容器名称: {{ auth_agent_container_name }}"
+      - "服务端口: {{ auth_agent_port_1 }}, {{ auth_agent_port_2 }}"
+      - "数据目录: {{ auth_agent_data_dir }}"
+      - "MAC地址: {{ host_mac_result.stdout }}"
+      - "网卡名称: {{ network_interface }}"
+      - "=========================================="

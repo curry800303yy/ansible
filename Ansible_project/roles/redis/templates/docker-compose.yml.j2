@@ -1,0 +1,20 @@
+version: "3"
+services:
+  redis:
+    image: redis:v1
+    container_name: redis
+    restart: always
+    ports:
+      - "{{ redis_port | default('21000') }}:6379"
+    volumes:
+      - ./users.acl:/etc/users.acl
+      - ./data:/data
+      - ./redis.conf:/etc/redis.conf
+    entrypoint: []
+    command: ["redis-server", "/etc/redis.conf"]
+    networks:
+      - {{ docker_network_name | default('open-network') }}
+
+networks:
+  {{ docker_network_name | default('open-network') }}:
+    external: true

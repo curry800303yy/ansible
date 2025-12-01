@@ -1,0 +1,64 @@
+# roles/mcdn-agent-py/tasks/main.yml
+---
+- name: 安装 Python3
+  package:
+    name: python3
+    state: present
+
+- name: 创建安装目录
+  file:
+    path: "{{ mcdn_agent_py_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建日志目录
+  file:
+    path: "{{ mcdn_agent_py_install_dir }}/log"
+    state: directory
+    mode: '0755'
+
+- name: 复制服务文件
+  copy:
+    src: "{{ item }}"
+    dest: "{{ mcdn_agent_py_install_dir }}/{{ item | basename }}"
+    mode: preserve
+  with_items:
+    - main.py
+    - startup.sh
+    - config.json
+    - install.sh
+    - mcdn-agent-py.service
+
+- name: 设置启动脚本执行权限
+  file:
+    path: "{{ mcdn_agent_py_install_dir }}/install.sh"
+    mode: '0755'
+
+- name: 启动服务
+  shell: |
+    cd {{ mcdn_agent_py_install_dir }}
+    nohup ./install.sh > /dev/null 2>&1 &
+  args:
+    executable: /bin/bash
+
+- name: 等待服务端口就绪
+  wait_for:
+    host: localhost
+    port: "{{ mcdn_agent_py_port }}"
+    delay: 5
+    timeout: 60
+
+- name: 检查服务状态
+  shell: ps aux | grep -v grep | grep "main.py"
+  register: service_status
+  failed_when: false
+
+- name: 显示部署信息
+  debug:
+    msg:
+      - "=========================================="
+      - "MCDN Agent Python 部署完成！"
+      - "安装目录: {{ mcdn_agent_py_install_dir }}"
+      - "服务端口: {{ mcdn_agent_py_port }}"
+      - "服务进程: {{ 'Running' if service_status.rc == 0 else 'Not Running' }}"
+      - "=========================================="

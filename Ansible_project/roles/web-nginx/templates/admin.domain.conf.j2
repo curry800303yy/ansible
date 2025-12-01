@@ -1,0 +1,34 @@
+# admin 配置
+upstream admin.domain.com{
+  server admin-out:80;
+}
+
+server {
+  listen      89;
+  server_name {{ main_server_ip }};
+
+  error_log  /var/log/nginx/admin.ip-error.log debug;
+  access_log /var/log/nginx/admin.ip-access.log;
+
+  location /basic-api {
+    proxy_http_version 1.1;  # WebSocket 必须 HTTP/1.1
+    proxy_set_header Upgrade $http_upgrade;  # 处理 WebSocket 升级
+    proxy_set_header Connection "upgrade";   # 处理连接升级
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # 后台接口地址
+    proxy_pass http://markcdn-admin-api:8080;
+    rewrite "^/basic-api/(.*)$" /$1 break;
+    proxy_redirect default;
+  }
+
+  location / {
+    proxy_pass http://admin.domain.com;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host:$server_port;
+  }
+}

@@ -1,0 +1,85 @@
+---
+# Console 前端控制台部署任务
+
+- name: 创建 console 工作目录
+  file:
+    path: "{{ console_work_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 复制 console 镜像文件
+  copy:
+    src: console.tar
+    dest: "{{ console_work_dir }}/console.tar"
+    mode: '0644'
+  become: true
+
+- name: 加载 console Docker 镜像
+  docker_image:
+    name: "{{ console_image_name }}"
+    tag: "{{ console_image_tag }}"
+    load_path: "{{ console_work_dir }}/console.tar"
+    source: load
+    state: present
+  become: true
+
+- name: 生成 console docker-compose 文件
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ console_work_dir }}/docker-compose.yml"
+    mode: '0644'
+  become: true
+  notify: restart console
+
+- name: 确保 Docker 网络存在
+  docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+  become: true
+
+- name: 停止现有的 console 容器（如果存在）
+  shell: |
+    if docker ps -a | grep -q "{{ console_container_name }}"; then
+      docker stop {{ console_container_name }} || true
+      docker rm {{ console_container_name }} || true
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+  ignore_errors: true
+
+- name: 启动 console 服务
+  shell: cd {{ console_work_dir }} && docker compose up -d
+  args:
+    executable: /bin/bash
+  become: true
+
+- name: 等待 console 服务启动
+  pause:
+    seconds: 10
+
+- name: 验证 console 容器状态
+  shell: docker ps --filter "name={{ console_container_name }}"
+  register: console_container_status
+  become: true
+
+- name: 显示 console 部署信息
+  debug:
+    msg: |
+      Console 前端控制台部署完成！
+      
+      容器名称: {{ console_container_name }}
+      镜像: {{ console_image_name }}:{{ console_image_tag }}
+      网络: {{ docker_network_name }}
+      工作目录: {{ console_work_dir }}
+      
+      容器状态:
+      {{ console_container_status.stdout }}
+
+- name: 清理镜像文件
+  file:
+    path: "{{ console_work_dir }}/console.tar"
+    state: absent
+  become: true
+  when: console_cleanup_tar | default(true)

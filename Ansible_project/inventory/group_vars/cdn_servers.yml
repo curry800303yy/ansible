@@ -1,0 +1,28 @@
+---
+# ============================================
+# CDN 服务器组特定配置
+# ============================================
+
+# === 部署控制 ===
+# 控制是否部署各个服务组件
+deploy_mysql: true
+deploy_redis: true
+deploy_kafka: true
+deploy_nginx: true
+
+# === 环境特定配置 ===
+# 可以根据不同环境覆盖这些值
+deployment_environment: "development"  # development, testing, production
+
+# === 日志配置 ===
+log_level: "INFO"
+log_retention_days: 7
+
+# === 监控配置 ===
+enable_monitoring: true
+metrics_port: "9090"
+
+# === 备份配置 ===
+backup_enabled: true
+backup_schedule: "0 2 * * *"  # 每天凌晨2点
+backup_retention_days: 30 

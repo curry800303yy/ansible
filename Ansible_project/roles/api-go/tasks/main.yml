@@ -1,0 +1,121 @@
+---
+# API-Go 控制台 API 服务部署任务
+
+- name: 创建 api-go 工作目录
+  file:
+    path: "{{ api_go_work_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 创建 api-go 日志目录
+  file:
+    path: "{{ api_go_work_dir }}/log"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 复制 api-go 镜像文件
+  copy:
+    src: api-go.tar
+    dest: "{{ api_go_work_dir }}/api-go.tar"
+    mode: '0644'
+  become: true
+
+- name: 检查 config.yaml 是否为目录
+  stat:
+    path: "{{ api_go_work_dir }}/config.yaml"
+  register: config_stat
+  become: true
+
+- name: 删除 config.yaml 目录（如果存在）
+  file:
+    path: "{{ api_go_work_dir }}/config.yaml"
+    state: absent
+  become: true
+  when: config_stat.stat.exists and config_stat.stat.isdir
+
+- name: 生成 api-go 配置文件
+  template:
+    src: config.yaml.j2
+    dest: "{{ api_go_work_dir }}/config.yaml"
+    mode: '0644'
+  become: true
+  notify: restart api-go
+
+- name: 加载 api-go Docker 镜像
+  docker_image:
+    name: "{{ api_go_image_name }}"
+    tag: "{{ api_go_image_tag }}"
+    load_path: "{{ api_go_work_dir }}/api-go.tar"
+    source: load
+    state: present
+  become: true
+
+- name: 生成 api-go docker-compose 文件
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ api_go_work_dir }}/docker-compose.yml"
+    mode: '0644'
+  become: true
+  notify: restart api-go
+
+- name: 确保 Docker 网络存在
+  shell: |
+    docker network create --driver=bridge {{ docker_network_name }} 2>/dev/null || true
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 停止现有的 api-go 容器（如果存在）
+  shell: |
+    docker rm -f {{ api_go_container_name }} 2>/dev/null || true
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 启动 api-go 服务
+  shell: |
+    cd {{ api_go_work_dir }} && \
+    docker compose up -d
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 等待 api-go 服务启动
+  wait_for:
+    port: "{{ api_go_port }}"
+    host: "{{ ansible_default_ipv4.address | default(ansible_host) | default('127.0.0.1') }}"
+    delay: 10
+    timeout: 60
+
+- name: 验证 api-go 容器状态
+  shell: |
+    docker ps --filter "name={{ api_go_container_name }}" --format "table {% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}"
+  register: api_go_container_status
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 显示 api-go 部署信息
+  debug:
+    msg: |
+      API-Go 控制台 API 服务部署完成！
+      
+      容器名称: {{ api_go_container_name }}
+      镜像: {{ api_go_image_name }}:{{ api_go_image_tag }}
+      端口: {{ api_go_port }}:8081
+      网络: {{ docker_network_name }}
+      工作目录: {{ api_go_work_dir }}
+      配置文件: {{ api_go_work_dir }}/config.yaml
+      日志目录: {{ api_go_work_dir }}/log
+      
+      容器状态:
+      {{ api_go_container_status.stdout }}
+
+- name: 清理镜像文件
+  file:
+    path: "{{ api_go_work_dir }}/api-go.tar"
+    state: absent
+  become: true
+  when: api_go_cleanup_tar | default(true) 

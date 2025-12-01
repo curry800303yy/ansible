@@ -1,0 +1,15 @@
+---
+# Docker handlers
+
+- name: restart docker
+  systemd:
+    name: docker
+    state: restarted
+    daemon_reload: true
+  become: true
+
+- name: reload docker
+  systemd:
+    name: docker
+    state: reloaded
+  become: true 

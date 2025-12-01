@@ -1,0 +1,11 @@
+---
+# web-nginx角色默认配置
+
+# Nginx安装目录
+nginx_install_dir: "/opt/nginx"
+
+# Docker网络配置
+docker_network_name: "open-network"
+
+# 后端服务配置 - 从group_vars/all.yml获取
+# manager_admin_ip, user_backend_ip, user_backend_private_ip 在 all.yml 中定义

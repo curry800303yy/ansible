@@ -1,0 +1,117 @@
+---
+- name: 更新 apt 包缓存
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: 安装必要的依赖包
+  apt:
+    name: "{{ packages }}"
+    state: present
+  become: true
+  vars:
+    packages:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+      - software-properties-common
+
+- name: 创建 Docker GPG 密钥目录
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 添加 Docker 官方 GPG 密钥
+  shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+  become: true
+
+- name: 获取系统架构
+  shell: dpkg --print-architecture
+  register: system_architecture
+  changed_when: false
+
+- name: 获取 Ubuntu 发行版代号
+  shell: . /etc/os-release && echo "$VERSION_CODENAME"
+  register: ubuntu_codename
+  changed_when: false
+
+- name: 添加 Docker 仓库
+  shell: |
+    echo "deb [arch={{ system_architecture.stdout }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ubuntu_codename.stdout }} stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  become: true
+
+- name: 更新 apt 缓存（添加 Docker 仓库后）
+  apt:
+    update_cache: true
+  become: true
+
+- name: 查看可用的 Docker 版本
+  shell: apt-cache madison docker-ce | head -5
+  register: available_versions
+  changed_when: false
+
+- name: 显示可用的 Docker 版本
+  debug:
+    msg: "{{ available_versions.stdout_lines }}"
+
+- name: 安装 Docker（最新版本或指定版本）
+  apt:
+    name: 
+      - "docker-ce{% if docker_version and docker_version != '' %}={{ docker_version }}{% endif %}"
+      - "docker-ce-cli{% if docker_version and docker_version != '' %}={{ docker_version }}{% endif %}"
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    #allow_change_held_packages: true
+  become: true
+
+- name: 确保 Docker 服务已启动并启用
+  systemd:
+    name: docker
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
+
+- name: 添加当前用户到 docker 用户组
+  user:
+    name: "{{ ansible_user | default(ansible_env.USER) }}"
+    groups: docker
+    append: true
+  become: true
+  when: ansible_user is defined or ansible_env.USER is defined
+
+- name: 验证 Docker 安装
+  command: docker --version
+  register: docker_version_output
+  changed_when: false
+
+- name: 验证 Docker Compose 安装
+  command: docker compose version
+  register: docker_compose_version_output
+  changed_when: false
+
+- name: 创建 Docker 网络
+  command: "docker network create --driver=bridge {{ docker_network_name }}"
+  ignore_errors: true
+  register: network_result
+  changed_when: network_result.rc == 0
+  failed_when: network_result.rc != 0 and 'already exists' not in network_result.stderr
+
+
+
+- name: 显示安装信息
+  debug:
+    msg: |
+      Docker 安装完成！
+      Docker 版本: {{ docker_version_output.stdout }}
+      Docker Compose 版本: {{ docker_compose_version_output.stdout }}
+      Docker 网络: {{ docker_network_name }}

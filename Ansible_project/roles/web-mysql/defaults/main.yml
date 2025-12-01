@@ -1,0 +1,24 @@
+---
+# MySQL安装目录
+mysql_install_dir: "/opt/web-mysql"
+
+# MySQL配置
+mysql_database_name: "mastercdn"
+mysql_container_name: "mysql"
+mysql_image: "mysql:8.0"
+mysql_port: "3306"
+
+# Docker网络
+docker_network_name: "open-network"
+
+# 数据库初始化配置
+mysql_init_database: true
+mysql_init_scripts:
+  - tables.sql
+  - init.sql
+mysql_data_files:
+  - ip2region_regions.txt
+
+# MySQL连接配置
+mysql_charset: "utf8mb4"
+mysql_collation: "utf8mb4_unicode_ci" 

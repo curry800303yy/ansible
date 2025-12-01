@@ -1,0 +1,19 @@
+---
+- name: restart admin-api-go
+  shell: |
+    cd {{ admin_api_go_work_dir }} && \
+    docker compose restart
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: init-waf-after-restart
+  shell: |
+    # 等待admin-api-go服务完全启动
+    sleep 15
+    # 执行WAF初始化命令
+    docker exec {{ admin_api_go_container_name | default('markcdn-admin-api') }} sh -c "wget http://127.0.0.1:{{ admin_api_go_port | default('25670') }}/admin/init-waf/{{ gateway_key }} -O -"
+  become: true
+  args:
+    executable: /bin/bash
+  when: gateway_key is defined and gateway_key != ""

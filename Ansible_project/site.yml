@@ -1,0 +1,320 @@
+---
+# CDN 管理系统完整部署 Playbook
+# 使用方法: ansible-playbook -i inventory/hosts site.yml
+
+# 1. 部署 ELK 日志系统 (ES + Kibana)
+- name: 部署 ELK 日志系统
+  hosts: es01_server
+  become: true
+  tags: ['es-kibana', 'elk', 'logs', 'search']
+  vars:
+    es_version: "8.16.4"
+    kibana_version: "8.16.4"
+    cluster_name: "ELK-Cluster"
+    node_name: "elk-node1"
+    es_password: "ESPWlajKy5p137mOE9c2"
+    kibana_password: "ESPWlajKy5p137mOE9c2"
+    expired_days: 7
+    index_setting: '"number_of_replicas":0,'
+
+  pre_tasks:
+    - name: 检查系统要求
+      fail:
+        msg: "此部署仅支持Ubuntu/Debian系统"
+      when: ansible_os_family != "Debian"
+
+  roles:
+    - es-kibana
+
+
+
+# 2. 部署监控系统 (Prometheus + N9E夜莺)
+- name: 部署监控系统
+  hosts: monitor_server
+  become: true
+  tags: ['monitor', 'prometheus', 'n9e', 'monitoring']
+  vars:
+    monitor_auto_mode: true
+    prometheus_port: 9090
+    n9e_port: 17000
+
+  pre_tasks:
+    - name: 检查系统要求
+      fail:
+        msg: "此部署仅支持Ubuntu系统"
+      when: ansible_os_family != "Debian"
+
+  roles:
+    - monitor
+
+# 3. 部署 CDN 管理系统服务
+- name: 部署 CDN 管理系统服务
+  hosts: web_server
+  become: true
+  gather_facts: true
+  tags: ['cdn', 'application']
+  roles:
+    # ========================================
+    # Docker 环境 - CDN 服务器需要
+    # ========================================
+    - role: docker
+      tags: ['docker', 'infrastructure', 'cdn']
+
+    # ========================================
+    # 基础服务部署 - 按依赖顺序部署
+    # ========================================
+    - role: web-mysql
+      tags: ['web-mysql', 'database']
+    
+    - role: redis
+      tags: ['redis', 'cache']
+    
+    - role: kafka
+      tags: ['kafka', 'message-queue']
+    
+    # ========================================
+    # 认证代理服务 - 在前后端容器之前部署
+    # ========================================
+    - role: auth-agent
+      tags: ['auth-agent', 'authentication']
+    
+    # ========================================
+    # MCDN Agent Python 服务 - 在 auth-agent 之后部署
+    # ========================================
+    - role: mcdn-agent-py
+      tags: ['mcdn-agent-py', 'agent']
+    
+    # ========================================
+    # 前后端应用服务部署
+    # ========================================
+    - role: console
+      tags: ['console', 'frontend']
+    
+    - role: api-go
+      tags: ['api-go', 'backend']
+ 
+    - role: admin-out
+      tags: ['admin-out', 'frontend']
+
+    - role: admin-api-go
+      tags: ['admin-api-go', 'backend']
+
+    # ========================================
+    # Web服务器 - 在所有后端服务部署完成后部署
+    # ========================================
+    - role: web-nginx
+      tags: ['web-nginx', 'nginx', 'web-server']
+
+
+
+
+# 4. 更新 Prometheus 监控配置（需要在 web_server 部署完成后）
+- name: 更新 Prometheus 监控配置
+  hosts: monitor_server
+  become: true
+  tags: ['prometheus-config', 'monitor-config']
+  vars:
+    admin_api_go_work_dir: "/opt/admin-api-go"
+    prometheus_config_path: "/apps/prometheus/prometheus.yml"
+  
+  pre_tasks:
+    - name: 检查 monitor_server 是否已部署
+      stat:
+        path: /apps/prometheus/prometheus.yml
+      register: prometheus_exists
+      failed_when: false
+
+    - name: 跳过未部署的监控系统
+      meta: end_play
+      when: not prometheus_exists.stat.exists
+
+  tasks:
+    - name: 等待 admin-api-go 服务就绪
+      wait_for:
+        host: "{{ hostvars[groups['web_server'][0]]['ansible_host'] }}"
+        port: 9999
+        delay: 10
+        timeout: 120
+      delegate_to: localhost
+      when: groups['web_server'] is defined and groups['web_server'] | length > 0
+
+    - name: 备份当前 Prometheus 配置
+      copy:
+        src: "{{ prometheus_config_path }}"
+        dest: "{{ prometheus_config_path }}.backup.{{ ansible_date_time.epoch }}"
+        remote_src: true
+      become: true
+
+    - name: 检查 client.key 文件是否存在
+      stat:
+        path: "{{ admin_api_go_work_dir }}/certs/ca/client.key"
+      register: client_key_file
+      delegate_to: "{{ groups['web_server'][0] }}"
+      become: true
+      when: groups['web_server'] is defined and groups['web_server'] | length > 0
+      
+    - name: 获取 client.key 的 MD5 值
+      shell: |
+        md5sum {{ admin_api_go_work_dir }}/certs/ca/client.key | awk '{print $1}'
+      register: client_key_md5
+      delegate_to: "{{ groups['web_server'][0] }}"
+      become: true
+      when: 
+        - groups['web_server'] is defined 
+        - groups['web_server'] | length > 0
+        - client_key_file.stat.exists
+        
+    - name: 显示获取的 MD5 值
+      debug:
+        msg: "Client key MD5: {{ client_key_md5.stdout | default('未获取到') }}"
+      when: client_key_md5 is defined
+
+    - name: 从 admin-api-go 获取 Prometheus 配置
+      shell: |
+        # 使用获取到的 key
+        key="{{ client_key_md5.stdout | default('') }}"
+        
+        if [ -z "$key" ]; then
+          echo "ERROR: 无法获取 client.key 的 MD5"
+          exit 1
+        fi
+        
+        echo "使用 key: $key"
+        echo "下载 URL: https://{{ hostvars[groups['web_server'][0]]['ansible_host'] }}:9999/config?key=${key}"
+        
+        # 下载配置
+        curl -o {{ prometheus_config_path }}.new -k -f -v -m 30 \
+          "https://{{ hostvars[groups['web_server'][0]]['ansible_host'] }}:9999/config?key=${key}" 2>&1
+        
+        curl_result=$?
+        echo "Curl 返回码: $curl_result"
+        
+        if [ $curl_result -eq 0 ]; then
+          echo "下载成功，验证配置文件..."
+          # 验证配置文件
+          if /apps/prometheus/promtool check config {{ prometheus_config_path }}.new >/dev/null 2>&1; then
+            mv {{ prometheus_config_path }}.new {{ prometheus_config_path }}
+            echo "SUCCESS"
+          else
+            echo "CONFIG_INVALID"
+            rm -f {{ prometheus_config_path }}.new
+            exit 1
+          fi
+        else
+          echo "DOWNLOAD_FAILED"
+          exit 1
+        fi
+      register: prometheus_config_update
+      become: true
+      when: 
+        - groups['web_server'] is defined 
+        - groups['web_server'] | length > 0
+        - client_key_md5 is defined 
+        - client_key_md5.stdout is defined
+        
+    - name: 显示配置获取结果
+      debug:
+        msg: "配置下载结果: {{ prometheus_config_update.stdout_lines | default([]) }}"
+      when: prometheus_config_update is defined
+
+    - name: 重启 Prometheus 服务
+      systemd:
+        name: prometheus
+        state: restarted
+      become: true
+      when: 
+        - prometheus_config_update is defined
+        - "'SUCCESS' in prometheus_config_update.stdout"
+
+    - name: 显示配置更新结果
+      debug:
+        msg:
+          - "=========================================="
+          - "Prometheus 配置更新完成"
+          - "=========================================="
+          - "配置源: https://{{ hostvars[groups['web_server'][0]]['ansible_host'] }}:9999/config"
+          - "配置文件: {{ prometheus_config_path }}"
+          - "更新状态: {{ prometheus_config_update.stdout | default('SKIPPED') }}"
+          - "Prometheus服务: {{ 'Restarted' if 'SUCCESS' in prometheus_config_update.stdout else 'Not restarted' }}"
+          - "=========================================="
+      when: prometheus_config_update is defined
+
+# 5、全量更新完成
+- name: 部署完成验证
+  hosts: all
+  become: false
+  tags: ['verify', 'info']
+  tasks:
+    - name: 显示完整部署信息
+      debug:
+        msg: |
+          🎉 CDN 管理系统完整部署完成！
+          
+          📋 部署的服务列表:
+          
+          🔧 基础设施:
+          - Docker 环境: 所有服务器
+          
+          🗄️ 数据存储服务:
+          - MySQL 数据库: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          - Redis 缓存: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          
+          📨 消息队列服务:
+          - Kafka: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          
+          🌐 Web 服务:
+          - Nginx: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          
+          🔐 认证服务:
+          - Auth Agent: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          
+          🔍 搜索和分析:
+          - Elasticsearch: {{ groups['es01_server'] | default(['未配置']) | join(', ') }}
+          - Kibana: {{ groups['es01_server'] | default(['未配置']) | join(', ') }}
+          
+          🛡️ 安全防护:
+          - Janusec WAF: {{ groups['janusec_server'] | default(['未配置']) | join(', ') }}
+          
+          📊 监控系统:
+          - Prometheus: {{ groups['monitor_server'] | default(['未配置']) | join(', ') }}
+          - N9E夜莺: {{ groups['monitor_server'] | default(['未配置']) | join(', ') }}
+          
+          🌐 CDN 管理系统:
+          - Console 前端: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          - API 服务: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          - 管理后台: {{ groups['web_server'] | default(['未配置']) | join(', ') }}
+          
+          🔗 访问地址:
+          {% if groups['web_server'] is defined %}
+          - MySQL: {{ groups['web_server'][0] }}:3306
+          - Redis: {{ groups['web_server'][0] }}:6379
+          - Kafka: {{ groups['web_server'][0] }}:9092
+          - Nginx: http://{{ groups['web_server'][0] }}:80
+          - Auth Agent: {{ groups['web_server'][0] }}:10111, {{ groups['web_server'][0] }}:10211
+          - CDN 控制台 API: http://{{ groups['web_server'][0] }}:25671
+          - CDN 管理 API: http://{{ groups['web_server'][0] }}:25670
+          {% endif %}
+          {% if groups['es01_server'] is defined %}
+          - Kibana: http://{{ groups['es01_server'][0] }}:5601
+          {% endif %}
+          {% if groups['janusec_server'] is defined %}
+          - Janusec: http://{{ groups['janusec_server'][0] }}
+          {% endif %}
+          {% if groups['monitor_server'] is defined %}
+          - Prometheus: http://{{ groups['monitor_server'][0] }}:9090 (admin/prometheus098)
+          - N9E夜莺: http://{{ groups['monitor_server'][0] }}:17000 (root/root.2020)
+          {% endif %}
+          
+          📝 常用命令:
+          - 查看所有容器: docker ps
+          - 查看网络: docker network ls
+          - 查看日志: docker logs <container_name>
+          - 查看基础服务状态: docker compose ps
+          
+          ⚠️  注意事项:
+          1. 请确保防火墙已开放相应端口 (80, 443, 3306, 6379, 5672, 15672, 9092, 10111, 10211, 25670, 25671)
+          2. 生产环境请修改默认密码 (MySQL, Redis)
+          3. 定期备份重要数据 (MySQL, Redis)
+          4. 基础服务按依赖顺序部署: MySQL → Redis → Kafka → Nginx → Auth Agent → 应用服务
+      run_once: true
+      delegate_to: localhost

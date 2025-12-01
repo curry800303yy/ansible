@@ -1,0 +1,97 @@
+---
+# Admin-Out 管理前端部署任务
+
+- name: 创建 admin-out 工作目录
+  file:
+    path: "{{ admin_out_work_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 复制 admin-out 镜像文件
+  copy:
+    src: admin-out.tar
+    dest: "{{ admin_out_work_dir }}/admin-out.tar"
+    mode: '0644'
+  become: true
+
+- name: 加载 admin-out Docker 镜像
+  docker_image:
+    name: "{{ admin_out_image_name }}"
+    tag: "{{ admin_out_image_tag }}"
+    load_path: "{{ admin_out_work_dir }}/admin-out.tar"
+    source: load
+    state: present
+  become: true
+
+- name: 生成 docker-entrypoint.sh 脚本
+  template:
+    src: docker-entrypoint.sh.j2
+    dest: "{{ admin_out_work_dir }}/docker-entrypoint.sh"
+    mode: '0755'
+  become: true
+
+- name: 生成 admin-out docker-compose 文件
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ admin_out_work_dir }}/docker-compose.yml"
+    mode: '0644'
+  become: true
+  notify: restart admin-out
+
+- name: 确保 Docker 网络存在
+  docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+  become: true
+
+- name: 停止现有的 admin-out 容器（如果存在）
+  shell: |
+    if docker ps -a | grep -q "{{ admin_out_container_name }}"; then
+      docker stop {{ admin_out_container_name }} || true
+      docker rm {{ admin_out_container_name }} || true
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+  ignore_errors: true
+
+- name: 启动 admin-out 服务
+  shell: cd {{ admin_out_work_dir }} && docker compose up -d
+  args:
+    executable: /bin/bash
+  become: true
+
+- name: 等待 admin-out 服务启动
+  pause:
+    seconds: 10
+
+- name: 验证 admin-out 容器状态
+  shell: docker ps --filter "name={{ admin_out_container_name }}"
+  register: admin_out_container_status
+  become: true
+
+- name: 显示 admin-out 部署信息
+  debug:
+    msg: |
+      Admin-Out 管理前端部署完成！
+      
+      容器名称: {{ admin_out_container_name }}
+      镜像: {{ admin_out_image_name }}:{{ admin_out_image_tag }}
+      网络: {{ docker_network_name }}
+      工作目录: {{ admin_out_work_dir }}
+      
+      域名配置:
+      管理域名: {{ admin_domain }}
+      API域名: {{ api_domain }}
+      控制台域名: {{ console_domain }}
+      
+      容器状态:
+      {{ admin_out_container_status.stdout }}
+
+- name: 清理镜像文件
+  file:
+    path: "{{ admin_out_work_dir }}/admin-out.tar"
+    state: absent
+  become: true
+  when: admin_out_cleanup_tar | default(true)

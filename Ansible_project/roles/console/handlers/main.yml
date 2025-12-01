@@ -1,0 +1,10 @@
+---
+# Console handlers
+
+- name: restart console
+  shell: |
+    cd {{ console_work_dir }}
+    docker compose restart
+  args:
+    executable: /bin/bash
+  become: true

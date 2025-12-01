@@ -1,0 +1,144 @@
+---
+- name: 创建Nginx安装目录
+  become: true
+  file:
+    path: "{{ nginx_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建Nginx配置目录
+  become: true
+  file:
+    path: "{{ nginx_install_dir }}/conf"
+    state: directory
+    mode: '0755'
+
+- name: 停止旧的Web服务和容器
+  become: true
+  shell: |
+    # 停止Docker容器
+    docker stop nginx || true
+    docker rm nginx || true
+    # 停止系统nginx（如果存在）
+    systemctl stop nginx || true
+    systemctl disable nginx || true
+    # 停止apache2（如果存在）
+    systemctl stop apache2 || true
+    systemctl disable apache2 || true
+    # 清理服务端口(89/90/91)
+    fuser -k 89/tcp || true
+    fuser -k 90/tcp || true
+    fuser -k 91/tcp || true
+  ignore_errors: true
+
+- name: 等待端口释放
+  wait_for:
+    port: "{{ item }}"
+    state: stopped
+    timeout: 10
+  with_items:
+    - 89
+    - 90
+    - 91
+  ignore_errors: true
+
+- name: 拷贝Nginx主配置文件
+  become: true
+  copy:
+    src: nginx.conf
+    dest: "{{ nginx_install_dir }}/nginx.conf"
+    mode: '0644'
+
+- name: 拷贝Nginx站点配置文件
+  become: true
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ nginx_install_dir }}/conf/{{ item.dest }}"
+    mode: '0644'
+  with_items:
+    - { src: "admin.domain.conf.j2", dest: "{{ admin_domain }}.conf" }
+    - { src: "api.domain.conf.j2", dest: "{{ api_domain }}.conf" }
+    - { src: "console.domain.conf.j2", dest: "{{ console_domain }}.conf" }
+
+- name: 拷贝docker-compose.yml
+  become: true
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ nginx_install_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: 停止并移除旧的Nginx容器
+  become: true
+  shell: |
+    docker stop nginx || true
+    docker rm nginx || true
+  ignore_errors: true
+
+- name: 停止系统nginx服务(如果存在)
+  become: true
+  systemd:
+    name: nginx
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+- name: 检查服务端口占用情况
+  shell: ss -tlnp | grep -E ':(89|90|91)' || echo "服务端口(89/90/91)未被占用"
+  register: port_check
+  ignore_errors: true
+
+- name: 显示端口占用情况
+  debug:
+    msg: "{{ port_check.stdout_lines }}"
+
+- name: 启动Nginx容器
+  become: true
+  shell: cd {{ nginx_install_dir }} && docker compose up -d
+  args:
+    executable: /bin/bash
+
+- name: 等待Nginx启动完成
+  shell: |
+    for i in {1..30}; do
+      if docker ps --filter name=nginx --filter status=running | grep -q nginx; then
+        echo "Nginx容器已启动"
+        exit 0
+      fi
+      echo "等待Nginx容器启动... (第 $i 次)"
+      sleep 2
+    done
+    echo "Nginx容器启动超时"
+    exit 1
+  register: nginx_wait_result
+
+- name: 等待服务端口就绪
+  wait_for:
+    port: "{{ item }}"
+    host: localhost
+    timeout: 30
+  with_items:
+    - 89  # Admin端口
+    - 90  # API端口
+    - 91  # Console端口
+
+- name: 验证Nginx容器状态
+  shell: docker ps --filter name=nginx --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+  register: nginx_status
+
+- name: 显示Nginx状态
+  debug:
+    msg: "{{ nginx_status.stdout_lines }}"
+
+- name: 显示部署完成信息
+  debug:
+    msg: |
+      ================================
+      Nginx部署完成！
+      ================================
+      访问地址:
+      - Admin: http://{{ admin_domain }}
+      - API: http://{{ api_domain }}
+      - Console: http://{{ console_domain }}
+      
+      注意: 使用 IP:端口 方式访问
+      ================================

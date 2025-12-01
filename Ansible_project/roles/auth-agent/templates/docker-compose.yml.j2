@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  agent:
+    image: {{ auth_agent_image_name }}
+    container_name: {{ auth_agent_container_name }}
+    environment:
+      - HOST_MAC={{ host_mac_result.stdout }}
+    ports:
+      - "{{ auth_agent_port_1 }}:{{ auth_agent_port_1 }}"
+      - "{{ auth_agent_port_2 }}:{{ auth_agent_port_2 }}"
+    networks:
+      - {{ auth_agent_network_name }}
+    working_dir: /usr/src/app
+    volumes:
+      - {{ auth_agent_data_dir }}:/usr/src/app/data
+    command: ./app
+
+networks:
+  {{ auth_agent_network_name }}:
+    external: true 

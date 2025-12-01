@@ -1,0 +1,30 @@
+---
+# ============================================
+# 生产环境特定配置
+# ============================================
+
+# === 安全配置 ===
+# 生产环境使用更安全的密码
+mysql_root_password: "{{ vault_mysql_prod_password | default('CHANGE_ME_PROD_MYSQL') }}"
+redis_password: "{{ vault_redis_prod_password | default('CHANGE_ME_PROD_REDIS') }}"
+
+# === 环境标识 ===
+deployment_environment: "production"
+
+# === 日志配置 ===
+log_level: "WARN"
+log_retention_days: 30
+
+# === 监控配置 ===
+enable_monitoring: true
+metrics_port: "9090"
+
+# === 备份配置 ===
+backup_enabled: true
+backup_schedule: "0 1 * * *"  # 每天凌晨1点
+backup_retention_days: 90
+
+# === 性能优化 ===
+mysql_max_connections: 200
+redis_maxmemory: "2gb"
+ 

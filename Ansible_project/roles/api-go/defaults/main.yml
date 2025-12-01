@@ -1,0 +1,103 @@
+---
+# API-Go 控制台 API 服务默认变量
+
+# 工作目录
+api_go_work_dir: "/opt/api-go"
+
+# Docker 镜像配置
+api_go_image_name: "cdn/markcdn-console-api"
+api_go_image_tag: "test"
+
+# 容器配置
+api_go_container_name: "markcdn-console-api"
+api_go_port: 25671
+
+# Docker 网络
+docker_network_name: "open-network"
+
+# 清理配置
+api_go_cleanup_tar: true
+
+# 应用配置
+app_debug: false
+php_api_url: "https://stage.api.domain.com/console/v1"
+app_scheme: "http://"
+app_token_secret: "YWRtaW4uY3NtLmlvQDIwMjIwNzAxCg=="
+app_token_expires: 86400
+app_cname_key: "123456"
+app_admin_role_id: "1,2"
+app_auto_write_admin_log: true
+app_account_key: "csm.io"
+app_oss_expire: 600
+app_accredit: true
+app_proxy_server_ip: "Local_public_ip"
+app_error_email: "1@qq.com"
+app_port_number: 10
+app_skip_tasks: false
+
+# 日志配置
+logger_level: "debug"
+logger_output_dir: "log"
+logger_format: "console"
+
+
+# 数据库配置
+database_type: "mysql"
+database_hostname: "{{ mysql_host }}"  # 引用全局变量
+database_name: "{{ mysql_database_name }}"  # 也可以引用全局的数据库名
+database_username: "root"
+database_password: "{{ mysql_root_password }}"  # 引用全局密码
+database_port: 3306
+database_charset: "utf8"
+database_debug: true
+database_max_idle_conns: 100
+database_max_open_conns: 100
+
+
+# Redis 配置
+redis_host: "{{ redis_host }}" 
+redis_auth: "u9saFD515b7fPS0LLz8YgtMINAQ"
+redis_port: 21000
+redis_user: "root"
+redis_db: 0
+
+
+# Stripe 配置
+stripe_private_key: "sk_test_51L9xxxxxxxxxxxxxxxxxxxxxx1"
+stripe_version: "2020-08-27"
+stripe_currency: "usd"
+
+# CNAME 配置
+cname_vip: "free.domain.net"
+
+# Prometheus 配置
+prometheus_host: "Prometheus_public_ip"
+prometheus_url: "https://dev.grafana.domain.com:3000/d/StarsL-TenSunS-node/admin-dashboard"
+prometheus_pass: "12345"
+prometheus_addr: "http://Prometheus_public_ip:9090"
+
+# WAF 节点配置
+waf_node_domain: "aabbcc321.fun"
+waf_node_analyze: "cdn"
+waf_node_max_num: 3000
+
+# Gateway 配置
+gateway_key: "bcd588a2a926xx921b0198218ae26507ef300b63658bee42d9561048804be823"
+gateway_host: "http://{{ hostvars[groups['janusec_server'][0]]['ansible_host'] }}/janusec-admin/ui-api"
+gateway_uip: "Gateway_public_ip"
+gateway_open_waf: true
+
+# Elastic 配置
+elastic_http_address: "https://{{ elastic_public_ip }}:9200"
+elastic_username: "elastic"
+elastic_password: "ESPWlajKy5p137mOE9c2"
+elastic_ttl_days: 7
+elastic_internal_addresses: "{{ elastic_intranet_ip }}"
+
+# Kafka 配置``
+kafka_pack_log_topic: "pack-log"
+kafka_data_change_topic: "data-change"
+kafka_address: "{{ kafka_host }}:9092"
+kafka_auth_username: "admin"
+kafka_auth_password: "admin-secret"
+kafka_auth_sasl: "plain" 

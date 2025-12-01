@@ -1,0 +1,91 @@
+---
+# ============================================
+# CDN 管理系统全局配置变量
+# ============================================
+
+# === 基础配置变量 ===
+# Web_all服务器IP地址
+main_server_ip: "47.111.222.333"                    # 主服务器公网IP
+main_server_private_ip: "172.16.0.111"              # 主服务器内网IP
+
+# === 服务主机配置 ===
+elastic_public_ip: "47.64.188.222"
+elastic_intranet_ip: "172.16.0.211"
+prometheus_intranet_ip: "172.16.0.21" # 要写 Prometheus 内网IP
+
+################################# 以下为默认配置无需修改 #################################
+# === 前端域名配置 ===
+admin_domain: "{{ main_server_ip }}:89" 
+api_domain: "{{ main_server_ip }}:90"
+console_domain: "{{ main_server_ip }}:91"
+
+# === 前端镜像版本配置 ===
+console_image_tag: "v5.4.0"
+admin_out_image_tag: "v5.4.0"
+
+# === 服务主机配置 ===
+mysql_host: "{{ main_server_ip }}"
+redis_host: "{{ main_server_ip }}"
+kafka_host: "{{ main_server_ip }}"
+
+# === 后端API服务配置 ===
+# 管理后台API服务地址(admin-api-go)
+manager_admin_ip: "{{ main_server_ip }}"
+
+# 用户后台API服务地址(api-go) 
+user_backend_ip: "{{ main_server_ip }}"
+user_backend_private_ip: "{{ main_server_private_ip }}"
+
+# === API代理配置 ===
+nginx_console_api_proxy: "http://{{ main_server_ip }}:25671"
+nginx_admin_api_proxy: "http://{{ main_server_ip }}:25670"
+nginx_admin_domain_proxy: "https://{{ admin_domain }}/basic-api/"
+
+# === Docker 网络配置 ===
+docker_network_name: "open-network"
+
+# === MySQL 数据库配置 ===
+mysql_install_dir: "/opt/web-mysql"
+mysql_root_password: "qbVZ89j3AGaHFv2c2"
+mysql_database_name: "mastercdn"
+mysql_charset: "utf8mb4"
+mysql_collation: "utf8mb4_unicode_ci"
+mysql_init_database: true
+mysql_init_scripts:
+  - tables.sql
+  - init.sql
+mysql_data_files:
+  - ip2region_regions.txt
+
+# === Redis 缓存配置 ===
+redis_install_dir: "/opt/redis"
+
+# === Kafka 消息队列配置 ===
+kafka_install_dir: "/opt/kafka"
+kafka_container_name: "kafka"
+kafka_port: "9092"
+kafka_zookeeper_port: "2181"
+
+
+# === Nginx Web服务器配置 ===
+nginx_install_dir: "/opt/nginx"
+nginx_container_name: "nginx"
+nginx_http_port: "80"
+nginx_https_port: "443"
+
+# === API 服务配置 ===
+api_go_port: 25671
+admin_api_go_port: 25670
+
+# === Auth Agent 认证代理配置 ===
+auth_agent_install_dir: "/opt/auth-agent"
+auth_agent_container_name: "agent"
+auth_agent_image_name: "auth/agent:1.0.0"
+auth_agent_image_file: "agent.tar"
+auth_agent_port_1: "10111"
+auth_agent_port_2: "10211"
+auth_agent_data_dir: "/opt/data_lease"
+auth_agent_network_name: "{{ docker_network_name }}"
+auth_agent_network_interface: "eth0"
+auth_agent_auto_detect_interface: true
+auth_agent_load_image: true 

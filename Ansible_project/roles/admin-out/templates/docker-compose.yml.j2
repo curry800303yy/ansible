@@ -1,0 +1,20 @@
+version: '3'
+services:
+  admin-out:
+    image: {{ admin_out_image_name }}:{{ admin_out_image_tag }}
+    container_name: {{ admin_out_container_name }}
+    volumes:
+      - {{ admin_out_work_dir }}/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    environment:
+      - ADMIN_DOMAIN={{ admin_domain }}
+      - API_DOMAIN={{ api_domain }}
+      - CONSOLE_DOMAIN={{ console_domain }}
+    networks:
+      - {{ docker_network_name }}
+    restart: always
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
+
+networks:
+  {{ docker_network_name }}:
+    external: true

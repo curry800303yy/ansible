@@ -1,0 +1,8 @@
+---
+# Admin-Out handlers
+
+- name: restart admin-out
+  shell: cd {{ admin_out_work_dir }} && docker compose restart
+  args:
+    executable: /bin/bash
+  become: true

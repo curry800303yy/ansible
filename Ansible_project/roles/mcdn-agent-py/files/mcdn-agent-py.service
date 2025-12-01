@@ -1,0 +1,15 @@
+[Unit]
+Description=MCDN Agent Python Service
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart={service_dir}/startup.sh
+WorkingDirectory={service_dir}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

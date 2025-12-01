@@ -1,0 +1,21 @@
+version: "3"
+services:
+  mysql:
+    image: {{ mysql_image | default('mysql:8.0') }}
+    container_name: {{ mysql_container_name | default('mysql') }}
+    ports:
+      - "{{ mysql_port | default('3306') }}:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD={{ mysql_root_password | default('qbVZ89j3AGaHFv2c2') }}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+      - ./mysql-files:/var/lib/mysql-files
+    restart: always
+    networks:
+      - {{ docker_network_name | default('open-network') }}
+
+networks:
+  {{ docker_network_name | default('open-network') }}:
+    external: true

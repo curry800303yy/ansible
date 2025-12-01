@@ -1,0 +1,54 @@
+---
+- name: 创建 Kafka 安装目录
+  file:
+    path: "{{ kafka_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建 Kafka 配置目录
+  file:
+    path: "{{ kafka_install_dir }}/config"
+    state: directory
+    mode: '0777'
+
+- name: 创建 Zookeeper 数据目录
+  file:
+    path: "{{ kafka_install_dir }}/zk-data"
+    state: directory
+    mode: '0777'
+
+- name: 创建 Zookeeper 日志目录
+  file:
+    path: "{{ kafka_install_dir }}/zk-logs"
+    state: directory
+    mode: '0777'
+
+- name: 创建 Kafka 数据目录
+  file:
+    path: "{{ kafka_install_dir }}/kafka-data"
+    state: directory
+    mode: '0777'
+
+- name: 复制 kafka_server_jaas.conf 配置文件
+  template:
+    src: config/kafka_server_jaas.conf
+    dest: "{{ kafka_install_dir }}/config/kafka_server_jaas.conf"
+    mode: '0644'
+
+- name: 复制 zookeeper_jaas.conf 配置文件
+  template:
+    src: config/zookeeper_jaas.conf
+    dest: "{{ kafka_install_dir }}/config/zookeeper_jaas.conf"
+    mode: '0644'
+
+- name: 复制 docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ kafka_install_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: 启动 Kafka 服务(拉取镜像，跟网速有关)
+  shell: |
+    cd {{ kafka_install_dir }} && docker compose up -d
+  register: start_kafka
+  changed_when: start_kafka.rc == 0

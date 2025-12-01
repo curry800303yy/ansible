@@ -1,0 +1,9 @@
+---
+# Docker 网络名称
+docker_network_name: "open-network"
+
+# Docker 版本（留空表示安装最新版本）
+docker_version: ""
+
+# Docker Compose 版本
+docker_compose_version: "v2.24.0"

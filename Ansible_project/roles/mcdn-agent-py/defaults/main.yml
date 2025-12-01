@@ -1,0 +1,5 @@
+# roles/mcdn-agent-py/defaults/main.yml
+---
+# MCDN Agent Python 基础配置
+mcdn_agent_py_install_dir: "/opt/mcdn-agent-py"
+mcdn_agent_py_port: 8090

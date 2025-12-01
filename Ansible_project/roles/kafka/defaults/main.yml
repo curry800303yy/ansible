@@ -1,0 +1,11 @@
+---
+# Kafka 安装目录
+kafka_install_dir: "/opt/kafka"
+
+# Docker 网络名称
+docker_network_name: "open-network"
+
+# Kafka 配置
+kafka_port: 9092
+kafka_internal_port: 9093
+zookeeper_port: 2182

@@ -1,0 +1,26 @@
+# roles/auth-agent/defaults/main.yml
+---
+# Auth Agent 配置
+auth_agent_install_dir: "/opt/auth-agent"
+auth_agent_container_name: "agent"
+auth_agent_image_name: "auth/agent:1.0.0"
+auth_agent_image_file: "agent.tar"
+
+# 端口配置
+auth_agent_port_1: "10111"
+auth_agent_port_2: "10211"
+
+# 数据目录配置
+auth_agent_data_dir: "/opt/data_lease"
+
+# 网络配置
+auth_agent_network_name: "open-network"
+
+# 网卡名称 (需要根据实际环境配置)
+auth_agent_network_interface: "eth0"
+
+# 是否自动检测网卡
+auth_agent_auto_detect_interface: true
+
+# 是否加载镜像文件
+auth_agent_load_image: true 

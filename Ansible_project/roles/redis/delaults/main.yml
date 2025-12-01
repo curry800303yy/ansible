@@ -1,0 +1,17 @@
+---
+# Redis 安装目录
+redis_install_dir: "/opt/redis"
+
+# Redis 端口配置
+redis_port: "21000"
+redis_internal_port: "6379"
+
+# Redis 配置
+redis_password: "123456"
+redis_log_level: "notice"
+
+# Docker 网络
+docker_network_name: "open-network"
+
+# 镜像配置
+redis_image_file: "redis-v1.tar"

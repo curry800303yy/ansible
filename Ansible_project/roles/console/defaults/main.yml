@@ -1,0 +1,17 @@
+---
+# Console 前端控制台默认变量
+
+# 工作目录
+console_work_dir: "/opt/console"
+
+# Docker 镜像配置
+console_image_name: "103.253.14.232/prod/console"
+
+# 容器配置
+console_container_name: "console-out"
+
+# Docker 网络
+docker_network_name: "open-network"
+
+# 清理配置
+console_cleanup_tar: true 

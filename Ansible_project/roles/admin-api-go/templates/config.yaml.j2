@@ -1,0 +1,102 @@
+appDebug: false
+
+app:
+  host: {{ api_domain }}/admin/v1 #Go项目API地址
+  clientHost: {{ admin_domain }}
+  scheme: {{ app_scheme }}
+  tokenSecret: {{ app_token_secret }}
+  tokenExpires: {{ app_token_expires }}
+  cnameKey: {{ app_cname_key }}
+  autoWriteAdminLog: {{ app_auto_write_admin_log | lower }}
+  accountKey: {{ app_account_key }}
+  ossExpire: {{ app_oss_expire }}
+  portNumber: {{ app_port_number }} # 端口数量限制，默认 10
+  nodeTimeout: 5 # 节点 ping 超时时间，默认 5 秒
+  adminApiUrl: http://{{ admin_domain }}/basic-api/
+  frontendUrlAdmin: http://{{ admin_domain }}
+  frontendUrlConsole: http://{{ console_domain }}
+  mcdnAgentUrl: http://{{ main_server_ip }}:8090 # mcdn-agent 服务地址
+  publicIP: "{{ main_server_ip }}"     # 公网IP地址，监控节点通过此IP连接管理节点
+  gitServerHost: "{{ main_server_ip }}:22022"
+
+
+logger:
+  level: {{ logger_level }} # 日志级别，默认 debug
+  outputDir: {{ logger_output_dir }}  # 日志输出目录，默认 log
+  format: {{ logger_format }}  # 日志输出格式，默认 console
+
+
+database:
+  type: {{ database_type }}  # 数据库类型，默认 mysql
+  hostname: {{ database_hostname }} # 数据库地址
+  database: {{ database_name }}  # 数据库名
+  username: {{ database_username }} # 数据库用户名
+  password: {{ database_password }} # 数据库密码
+  hostport: {{ database_port }} # 数据库端口
+  charset: {{ database_charset }} # 数据库字符集
+  debug: {{ database_debug | lower }} # 是否开启调试
+  maxIdleConns: {{ database_max_idle_conns }} # 最大空闲连接数
+  maxOpenConns: {{ database_max_open_conns }} # 最大打开连接数
+
+redis:
+  host: {{ redis_host }} # Redis 地址
+  user: {{ redis_user }} # Redis 用户
+  auth: {{ redis_auth }} # Redis 密码
+  port: {{ redis_port }} # Redis 端口
+  db: {{ redis_db }} # Redis 数据库
+
+
+stripe:
+  privateKey: {{ stripe_private_key }}
+  version: "{{ stripe_version }}"
+  currency: {{ stripe_currency }}
+
+cname:
+  vip: free.domain.net
+
+prometheus:
+  addr: http://{{ prometheus_intranet_ip }}:9090
+  user: admin
+  password: prometheus098
+  
+wafNode:
+  domain: {{ waf_node_domain }}
+  analyze: {{ waf_node_analyze }}
+  maxNum: {{ waf_node_max_num }}
+
+
+elastic:
+  httpAddress: {{ elastic_http_address }}
+  internalAddresses:
+    - https://{{ elastic_internal_addresses }}:9200
+  username: {{ elastic_username }}
+  password: {{ elastic_password }}
+  ttlDays: {{ elastic_ttl_days }}
+
+kafka:
+  packLogTopic: {{ kafka_pack_log_topic }}        # 打包日志的topic
+  dataChangeTopic: {{ kafka_data_change_topic }}  # 数据变更的topic
+  address: # 填写kafka地址
+    - {{ kafka_address }}
+  internalAddresses:
+    - {{ kafka_address }}
+  auth:  # 可选，如果不需要验证，此处可以不填
+    username: {{ kafka_auth_username }}
+    password: {{ kafka_auth_password }}
+    sasl: {{ kafka_auth_sasl }}  # 用户和密码的加密方式，可选三种： plain, scram-sha-256, scram-sha-512
+    #   ssl: false                   # 是否要ssl
+    #   client_crt: "客户端证书内容"   # 请将回车换成 \\n
+    #   client_key: "客户端证书的Key"  # 请将回车换成 \\n
+
+nodeMonitor:
+  servicePath: "node-monitor/node_monitor.tar.gz"  # 监控服务包绝对路径
+  rootCertificate: "node-monitor/ca.crt"          # 根证书路径或内容
+  certificate: "node-monitor/node_monitor.crt"           # 客户端证书路径或内容
+  privateKey: "node-monitor/node_monitor.key"            # 私钥路径或内容
+  heartbeatPort: 8443                             # 心跳服务端口
+
+# DNS 同步 Worker 配置
+dns:
+  worker:
+    enabled: true      # Worker 开关，true: 新Worker生效，false: 使用旧逻辑
+    count: 100          # Worker 数量

@@ -1,0 +1,28 @@
+# requirepass 设置的为默认管理员的密码，它的默认用户名为 default
+# acl 中的密码可以用 > 指定明文密码，比如 
+#    acl setuser 用户名 >明文密码
+# 也可以使用 # 指定 sha256 后的密码（echo -n "您的密码" | shasum -a 256），比如
+#    acl setuser 用户名 #sha256后的密码
+# 当使用了 aclfile 时，验证密码时，必须加上用户名，比如
+# auth default FI3jF7wKi4N4Jzy592zj2fPgOYg
+
+aclfile /etc/users.acl
+dir /data
+#requirepass {{ redis_password | default('123456') }}
+notify-keyspace-events Ex
+loadmodule /usr/lib/redis/modules/redisbloom.so
+
+# 网络配置
+bind 0.0.0.0
+port {{ redis_internal_port | default('6379') }}
+protected-mode no
+
+# 日志配置
+loglevel {{ redis_log_level | default('notice') }}
+
+# 持久化配置
+save 900 1
+save 300 10
+save 60 10000
+appendonly yes
+appendfsync everysec

@@ -1,0 +1,36 @@
+---
+# ES-Kibana 默认变量配置
+
+# Elasticsearch 版本
+es_version: "8.16.4"
+
+# Kibana 版本
+kibana_version: "8.16.4"
+
+# 安装目录
+es_home: "/opt/elasticsearch"
+kibana_home: "/opt/kibana"
+
+# 系统用户
+es_user: "es"
+es_group: "es"
+
+# 集群配置
+cluster_name: "ELK-Cluster"
+node_name: "elk-node1"
+network_host: "0.0.0.0"
+http_port: "9200"
+kibana_port: "5601"
+discovery_type: "single-node"
+
+# 固定密码配置
+es_password: "ESPWlajKy5p137mOE9c2"
+kibana_password: "ESPWlajKy5p137mOE9c2"
+
+# 索引配置
+expired_days: 7
+index_setting: '"number_of_replicas":0,'
+
+# 脚本路径
+install_script_path: "/tmp/install_es.sh"
+init_script_path: "/tmp/init.es.sh"

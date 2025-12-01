@@ -1,0 +1,177 @@
+# roles/mysql/tasks/main.yml
+---
+- name: 创建MySQL安装目录
+  file:
+    path: "{{ mysql_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 创建MySQL数据目录
+  file:
+    path: "{{ mysql_install_dir }}/data"
+    state: directory
+    mode: '0755'
+
+- name: 创建MySQL初始化脚本目录
+  file:
+    path: "{{ mysql_install_dir }}/initdb"
+    state: directory
+    mode: '0755'
+
+- name: 创建MySQL文件导入目录
+  file:
+    path: "{{ mysql_install_dir }}/mysql-files"
+    state: directory
+    mode: '0777'
+
+- name: 拷贝docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ mysql_install_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: 拷贝SQL初始化脚本
+  copy:
+    src: "{{ item }}"
+    dest: "{{ mysql_install_dir }}/initdb/{{ item }}"
+    mode: '0644'
+  loop: "{{ mysql_init_scripts }}"
+  when: mysql_init_database | default(true) | bool
+
+- name: 拷贝数据文件
+  copy:
+    src: "{{ item }}"
+    dest: "{{ mysql_install_dir }}/mysql-files/{{ item }}"
+    mode: '0777'
+  loop: "{{ mysql_data_files }}"
+  when: mysql_init_database | default(true) | bool
+
+- name: 启动MySQL容器
+  shell: cd {{ mysql_install_dir }} && docker compose up -d
+  args:
+    executable: /bin/bash
+
+- name: 等待MySQL服务启动
+  wait_for:
+    host: localhost
+    port: "{{ mysql_port | default('3306') }}"
+    delay: 30
+    timeout: 120
+
+- name: 等待MySQL完全就绪
+  pause:
+    seconds: 10
+
+- name: 检查MySQL容器状态
+  shell: docker ps --filter "name={{ mysql_container_name }}"
+  register: mysql_container_status
+
+- name: 显示MySQL容器状态
+  debug:
+    msg: "{{ mysql_container_status.stdout }}"
+
+- name: 检查数据库初始化标记文件
+  stat:
+    path: "{{ mysql_install_dir }}/data/.db_initialized"
+  register: db_init_marker
+
+- name: 显示初始化状态
+  debug:
+    msg: 
+      - "数据库初始化标记文件存在: {{ db_init_marker.stat.exists }}"
+      - "需要执行初始化: {{ not db_init_marker.stat.exists }}"
+
+
+- name: 创建mastercdn数据库
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} -e "CREATE DATABASE IF NOT EXISTS \`{{ mysql_database_name }}\` CHARACTER SET {{ mysql_charset }} COLLATE {{ mysql_collation }};"
+  args:
+    executable: /bin/bash
+  when: mysql_init_database | default(true) | bool
+
+
+- name: 执行tables.sql脚本
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} {{ mysql_database_name }} < {{ mysql_install_dir }}/initdb/tables.sql
+  args:
+    executable: /bin/bash
+  when: 
+    - mysql_init_database | default(true) | bool
+    - not db_init_marker.stat.exists
+
+- name: 执行init.sql脚本
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} {{ mysql_database_name }} < {{ mysql_install_dir }}/initdb/init.sql
+  args:
+    executable: /bin/bash
+  when: 
+    - mysql_init_database | default(true) | bool
+    - not db_init_marker.stat.exists
+
+- name: 导入ip2region_regions.txt数据
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} {{ mysql_database_name }} -e "
+    LOAD DATA INFILE '/var/lib/mysql-files/ip2region_regions.txt' 
+    INTO TABLE ip2region_regions
+    FIELDS TERMINATED BY ',' 
+    ENCLOSED BY '\"' 
+    LINES TERMINATED BY '\n';"
+  args:
+    executable: /bin/bash
+  when: 
+    - mysql_init_database | default(true) | bool
+    - not db_init_marker.stat.exists
+  ignore_errors: true
+
+- name: 创建数据库初始化标记文件
+  file:
+    path: "{{ mysql_install_dir }}/data/.db_initialized"
+    state: touch
+    mode: '0644'
+  when: 
+    - mysql_init_database | default(true) | bool
+    - not db_init_marker.stat.exists
+    
+- name: 验证数据库初始化结果
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} {{ mysql_database_name }} -e "SHOW TABLES;"
+  args:
+    executable: /bin/bash
+  register: mysql_tables_result
+  when: mysql_init_database | default(true) | bool
+
+- name: 显示数据库表列表
+  debug:
+    msg: "{{ mysql_tables_result.stdout_lines }}"
+  when: 
+    - mysql_init_database | default(true) | bool
+    - mysql_tables_result is defined
+
+- name: 验证ip2region_regions表数据
+  shell: |
+    docker exec -i {{ mysql_container_name }} mysql -uroot -p{{ mysql_root_password }} {{ mysql_database_name }} -e "SELECT COUNT(*) as total_records FROM ip2region_regions;"
+  args:
+    executable: /bin/bash
+  register: mysql_data_count
+  when: mysql_init_database | default(true) | bool
+  ignore_errors: true
+
+- name: 显示ip2region_regions表记录数
+  debug:
+    msg: "{{ mysql_data_count.stdout_lines }}"
+  when: 
+    - mysql_init_database | default(true) | bool
+    - mysql_data_count is defined 
+    - mysql_data_count.rc == 0
+
+- name: 显示MySQL部署完成信息
+  debug:
+    msg:
+      - "=========================================="
+      - "MySQL部署完成！"
+      - "数据库地址: {{ ansible_host | default('localhost') }}:{{ mysql_port }}"
+      - "数据库名称: {{ mysql_database_name }}"
+      - "用户名: root"
+      - "密码: {{ mysql_root_password }}"
+      - "字符集: {{ mysql_charset }}"
+      - "=========================================="

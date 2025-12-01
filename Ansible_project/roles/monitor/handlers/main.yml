@@ -1,0 +1,12 @@
+---
+- name: cleanup monitor installation
+  file:
+    path: /tmp/monitor-install
+    state: absent
+  become: true
+
+- name: restart n9e
+  systemd:
+    name: n9e
+    state: restarted
+  become: true

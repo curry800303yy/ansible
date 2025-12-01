@@ -1,0 +1,136 @@
+---
+# Admin-API-Go 管理 API 服务部署任务
+
+- name: 创建 admin-api-go 工作目录
+  file:
+    path: "{{ admin_api_go_work_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 创建 admin-api-go 日志目录
+  file:
+    path: "{{ admin_api_go_work_dir }}/log"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 创建 admin-api-go public 目录
+  file:
+    path: "{{ admin_api_go_work_dir }}/public"
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: 复制 public 目录内容
+  copy:
+    src: public/
+    dest: "{{ admin_api_go_work_dir }}/public/"
+    mode: '0755'
+    directory_mode: '0755'
+  become: true
+
+- name: 复制 admin-api-go 镜像文件
+  copy:
+    src: admin-api-go.tar
+    dest: "{{ admin_api_go_work_dir }}/admin-api-go.tar"
+    mode: '0644'
+  become: true
+
+- name: 检查 admin-api-go config.yaml 是否为目录
+  stat:
+    path: "{{ admin_api_go_work_dir }}/config.yaml"
+  register: admin_api_go_config_stat
+  become: true
+
+- name: 删除 admin-api-go config.yaml 目录（如果存在）
+  file:
+    path: "{{ admin_api_go_work_dir }}/config.yaml"
+    state: absent
+  become: true
+  when: admin_api_go_config_stat.stat.exists and admin_api_go_config_stat.stat.isdir
+
+- name: 生成 admin-api-go 配置文件
+  template:
+    src: config.yaml.j2
+    dest: "{{ admin_api_go_work_dir }}/config.yaml"
+    mode: '0644'
+  become: true
+  notify: restart admin-api-go
+
+- name: 加载 admin-api-go Docker 镜像
+  shell: |
+    cd {{ admin_api_go_work_dir }} && \
+    docker load -i admin-api-go.tar
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 生成 admin-api-go docker-compose 文件
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ admin_api_go_work_dir }}/docker-compose.yml"
+    mode: '0644'
+  become: true
+  notify: restart admin-api-go
+
+- name: 确保 Docker 网络存在
+  shell: |
+    docker network create --driver=bridge {{ docker_network_name }} 2>/dev/null || true
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 停止现有的 admin-api-go 容器（如果存在）
+  shell: |
+    docker rm -f {{ admin_api_go_container_name }} 2>/dev/null || true
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 启动 admin-api-go 服务
+  shell: |
+    cd {{ admin_api_go_work_dir }} && \
+    docker compose up -d
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 等待 admin-api-go 服务启动
+  wait_for:
+    port: "{{ admin_api_go_port }}"
+    host: "{{ ansible_default_ipv4.address | default(ansible_host) | default('127.0.0.1') }}"
+    delay: 10
+    timeout: 60
+
+- name: 验证 admin-api-go 容器状态
+  shell: |
+    docker ps --filter "name={{ admin_api_go_container_name }}" --format "table {% raw %}{{.Names}}\t{{.Status}}\t{{.Ports}}{% endraw %}"
+  register: admin_api_go_container_status
+  become: true
+  args:
+    executable: /bin/bash
+
+- name: 显示 admin-api-go 部署信息
+  debug:
+    msg: |
+      Admin-API-Go 管理 API 服务部署完成！
+      
+      容器名称: {{ admin_api_go_container_name }}
+      镜像: {{ admin_api_go_image_name }}:{{ admin_api_go_image_tag }}
+      端口: {{ admin_api_go_port }}:8080
+      网络: {{ docker_network_name }}
+      工作目录: {{ admin_api_go_work_dir }}
+      配置文件: {{ admin_api_go_work_dir }}/config.yaml
+      日志目录: {{ admin_api_go_work_dir }}/log
+      Public目录: {{ admin_api_go_work_dir }}/public
+      
+      容器状态:
+      {{ admin_api_go_container_status.stdout }}
+
+- name: 清理镜像文件
+  file:
+    path: "{{ admin_api_go_work_dir }}/admin-api-go.tar"
+    state: absent
+  become: true
+  when: admin_api_go_cleanup_tar | default(true)

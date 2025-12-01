@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  markcdn-console-api:
+    image: {{ api_go_image_name }}:{{ api_go_image_tag }}
+    container_name: {{ api_go_container_name }}
+    restart: always
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./log:/app/log
+    ports:
+      - "{{ api_go_port }}:8081"
+
+networks:
+  default:
+    external:
+      name: {{ docker_network_name }} 

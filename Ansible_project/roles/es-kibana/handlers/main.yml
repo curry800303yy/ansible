@@ -1,0 +1,19 @@
+---
+# ES-Kibana handlers
+
+- name: restart elasticsearch
+  systemd:
+    name: elasticsearch
+    state: restarted
+  become: true
+
+- name: restart kibana
+  systemd:
+    name: kibana
+    state: restarted
+  become: true
+
+- name: reload systemd
+  systemd:
+    daemon_reload: true
+  become: true

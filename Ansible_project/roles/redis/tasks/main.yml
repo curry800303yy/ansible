@@ -1,0 +1,50 @@
+---
+- name: 创建Redis安装目录
+  file:
+    path: "{{ redis_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: 大文件传输开始
+  debug:
+    msg: "开始传输Redis镜像文件 ，请耐心等待"
+
+- name: 拷贝Redis镜像文件
+  copy:
+    src: redis-v1.tar
+    dest: "{{ redis_install_dir }}/redis-v1.tar"
+    mode: '0644'
+
+- name: 拷贝Redis访问控制列表文件
+  copy:
+    src: users.acl
+    dest: "{{ redis_install_dir }}/users.acl"
+    mode: '0644'
+
+- name: 创建Redis数据目录
+  file:
+    path: "{{ redis_install_dir }}/data"
+    state: directory
+    mode: '0755'
+
+- name: 拷贝Redis配置文件
+  template:
+    src: redis.conf.j2
+    dest: "{{ redis_install_dir }}/redis.conf"
+    mode: '0644'
+
+- name: 拷贝docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ redis_install_dir }}/docker-compose.yml"
+    mode: '0644'
+
+- name: 加载Redis镜像
+  shell: cd {{ redis_install_dir }} && docker load -i redis-v1.tar
+  args:
+    executable: /bin/bash
+
+- name: 启动Redis容器
+  shell: cd {{ redis_install_dir }} && docker compose up -d
+  args:
+    executable: /bin/bash

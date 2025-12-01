@@ -1,0 +1,227 @@
+{
+    "name": "kafka",
+    "tags": "",
+    "ident": "",
+    "configs": {
+        "var": [],
+        "panels": [
+            {
+                "type": "gauge",
+                "id": "dea6c153-be15-46bd-9453-32adc31b19c4",
+                "layout": {
+                    "h": 8,
+                    "w": 7,
+                    "x": 0,
+                    "y": 0,
+                    "i": "dea6c153-be15-46bd-9453-32adc31b19c4",
+                    "isResizable": true
+                },
+                "version": "3.0.0",
+                "datasourceCate": "prometheus",
+                "datasourceValue": 1,
+                "targets": [
+                    {
+                        "refId": "A",
+                        "maxDataPoints": 240,
+                        "expr": "up{job=\"kafka\"}"
+                    }
+                ],
+                "transformations": [
+                    {
+                        "id": "organize",
+                        "options": {}
+                    }
+                ],
+                "name": "Panel Title",
+                "maxPerRow": 4,
+                "custom": {
+                    "textMode": "valueAndName",
+                    "calc": "lastNotNull",
+                    "valueField": "Value"
+                },
+                "options": {
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "#3FC453",
+                                "value": null,
+                                "type": "base"
+                            },
+                            {
+                                "color": "#FF9919",
+                                "value": 60
+                            },
+                            {
+                                "color": "#FF656B",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "standardOptions": {
+                        "min": 0,
+                        "max": 100
+                    }
+                }
+            },
+            {
+                "type": "timeseries",
+                "id": "77e07c18-e35d-499c-bcf6-0138fd476e6f",
+                "layout": {
+                    "h": 8,
+                    "w": 17,
+                    "x": 7,
+                    "y": 0,
+                    "i": "77e07c18-e35d-499c-bcf6-0138fd476e6f",
+                    "isResizable": true
+                },
+                "version": "3.0.0",
+                "datasourceCate": "prometheus",
+                "datasourceValue": 1,
+                "targets": [
+                    {
+                        "refId": "A",
+                        "maxDataPoints": 240,
+                        "expr": "sum(increase(kafka_consumergroup_lag_sum[1m])) by(topic)"
+                    }
+                ],
+                "transformations": [
+                    {
+                        "id": "organize",
+                        "options": {}
+                    }
+                ],
+                "name": "查看堆积量（每分钟）",
+                "description": "按消费组和 Topic 查看堆积（延迟）",
+                "maxPerRow": 4,
+                "options": {
+                    "tooltip": {
+                        "mode": "all",
+                        "sort": "none"
+                    },
+                    "legend": {
+                        "displayMode": "hidden",
+                        "heightInPercentage": 30,
+                        "placement": "bottom",
+                        "behaviour": "showItem",
+                        "selectMode": "single"
+                    },
+                    "standardOptions": {},
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "#6C53B1",
+                                "value": null,
+                                "type": "base"
+                            }
+                        ]
+                    }
+                },
+                "custom": {
+                    "drawStyle": "lines",
+                    "lineInterpolation": "smooth",
+                    "spanNulls": false,
+                    "lineWidth": 2,
+                    "fillOpacity": 0.01,
+                    "gradientMode": "none",
+                    "stack": "off",
+                    "scaleDistribution": {
+                        "type": "linear"
+                    },
+                    "showPoints": "none",
+                    "pointSize": 5
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID"
+                        },
+                        "properties": {
+                            "rightYAxisDisplay": "off"
+                        }
+                    }
+                ]
+            },
+            {
+                "type": "timeseries",
+                "id": "12fb29cb-59f2-4eeb-b0de-71296980cf3c",
+                "layout": {
+                    "h": 8,
+                    "w": 24,
+                    "x": 0,
+                    "y": 8,
+                    "i": "12fb29cb-59f2-4eeb-b0de-71296980cf3c",
+                    "isResizable": true
+                },
+                "version": "3.0.0",
+                "datasourceCate": "prometheus",
+                "datasourceValue": 1,
+                "targets": [
+                    {
+                        "refId": "A",
+                        "maxDataPoints": 240,
+                        "expr": "60 * rate(kafka_topic_partition_current_offset{topic!=\"__consumer_offsets\"}[5m])"
+                    }
+                ],
+                "transformations": [
+                    {
+                        "id": "organize",
+                        "options": {}
+                    }
+                ],
+                "name": "消息写入速率",
+                "description": "按 Topic 查看消息写入速率，表示每分钟产生 n 条消息",
+                "maxPerRow": 4,
+                "options": {
+                    "tooltip": {
+                        "mode": "all",
+                        "sort": "none"
+                    },
+                    "legend": {
+                        "displayMode": "hidden",
+                        "heightInPercentage": 30,
+                        "placement": "bottom",
+                        "behaviour": "showItem",
+                        "selectMode": "single"
+                    },
+                    "standardOptions": {},
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "color": "#6C53B1",
+                                "value": null,
+                                "type": "base"
+                            }
+                        ]
+                    }
+                },
+                "custom": {
+                    "drawStyle": "lines",
+                    "lineInterpolation": "smooth",
+                    "spanNulls": false,
+                    "lineWidth": 2,
+                    "fillOpacity": 0.01,
+                    "gradientMode": "none",
+                    "stack": "off",
+                    "scaleDistribution": {
+                        "type": "linear"
+                    },
+                    "showPoints": "none",
+                    "pointSize": 5
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byFrameRefID"
+                        },
+                        "properties": {
+                            "rightYAxisDisplay": "off"
+                        }
+                    }
+                ]
+            }
+        ],
+        "version": "3.0.0",
+        "graphTooltip": "default",
+        "graphZoom": "default"
+    }
+}

@@ -1,0 +1,357 @@
+---
+# ES-Kibana 安装和配置任务 - 直接调用install_es.sh脚本
+
+- name: "检查系统要求"
+  fail:
+    msg: "此role仅支持Ubuntu/Debian系统"
+  when: ansible_os_family != "Debian"
+
+- name: "复制install_es.sh安装脚本到目标服务器"
+  copy:
+    src: install_es.sh
+    dest: "{{ install_script_path }}"
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "复制init.es.sh初始化脚本到目标服务器"
+  copy:
+    src: init.es.sh
+    dest: "{{ init_script_path }}"
+    mode: '0755'
+    owner: root
+    group: root
+  become: true
+
+- name: "检查Elasticsearch是否已安装"
+  stat:
+    path: "{{ es_home }}/bin/elasticsearch"
+  register: es_installed
+
+- name: "检查Kibana是否已安装"
+  stat:
+    path: "{{ kibana_home }}/bin/kibana"
+  register: kibana_installed
+
+- name: "显示安装前信息"
+  debug:
+    msg: |
+      准备安装ELK Stack...
+      - Elasticsearch版本: {{ es_version }}
+      - Kibana版本: {{ kibana_version }}
+      - 集群名称: {{ cluster_name }}
+      - 节点名称: {{ node_name }}
+      - ES密码: {{ es_password }}
+      - Kibana密码: {{ kibana_password }}
+      - 是否已安装ES: {{ es_installed.stat.exists }}
+      - 是否已安装Kibana: {{ kibana_installed.stat.exists }}
+
+- name: "执行ELK Stack安装脚本 (异步执行)"
+  shell: |
+    nohup {{ install_script_path }} > /tmp/elk_install.log 2>&1 &
+    echo $!
+  become: true
+  register: elk_install_pid
+  async: 3600  # 1小时超时
+  poll: 0      # 立即返回，不等待完成
+  when: not (es_installed.stat.exists and kibana_installed.stat.exists)
+
+- name: "显示安装开始信息"
+  debug:
+    msg: |
+      ELK Stack 安装已开始...
+      - 脚本路径: {{ install_script_path }}
+      - 日志文件: /tmp/elk_install.log
+      - 预计时间: 10-30分钟
+      - 任务ID: {{ elk_install_pid.ansible_job_id }}
+      - 监控频率: 每30秒检查一次进度
+  when: not (es_installed.stat.exists and kibana_installed.stat.exists)
+
+- name: "监控安装进度 - 标准循环方式"
+  async_status:
+    jid: "{{ elk_install_pid.ansible_job_id }}"
+  register: elk_status
+  until: elk_status.finished
+  retries: 120
+  delay: 30
+  when: not (es_installed.stat.exists and kibana_installed.stat.exists) and elk_install_pid is defined
+
+- name: "显示安装监控完成信息"
+  shell: |
+    echo "=== 📊 ELK安装监控完成 ($(date '+%Y-%m-%d %H:%M:%S')) ==="
+    echo ""
+    if [ -f "/tmp/elk_install.log" ]; then
+      LOG_SIZE=$(wc -l < /tmp/elk_install.log)
+      echo "📄 最终日志文件: $LOG_SIZE 行"
+      echo ""
+      
+      echo "🔍 安装阶段检查:"
+      if grep -q "开始安装" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ 安装已开始"
+      fi
+      if grep -q "下载.*Elasticsearch\|Downloading.*elasticsearch" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ Elasticsearch 下载完成"
+      fi
+      if grep -q "解压.*Elasticsearch\|Extracting.*elasticsearch" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ Elasticsearch 解压完成"
+      fi
+      if grep -q "启动.*elasticsearch\|Starting.*elasticsearch\|elasticsearch.*started" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ Elasticsearch 服务启动"
+      fi
+      if grep -q "下载.*Kibana\|Downloading.*kibana" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ Kibana 下载完成"
+      fi
+      if grep -q "启动.*kibana\|Starting.*kibana\|kibana.*started" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ Kibana 服务启动"
+      fi
+      if grep -q "密码.*设置\|password.*set\|密码设置完成" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ 密码配置完成"
+      fi
+      if grep -q "安装.*完成\|installation.*complete\|Setup completed" /tmp/elk_install.log 2>/dev/null; then
+        echo "  ✅ 安装完成"
+      fi
+      
+      echo ""
+      echo "📋 安装日志摘要 (最后20行):"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      # 移除颜色码、空字符和二进制字符，只显示可读文本
+      tail -20 /tmp/elk_install.log | sed 's/\x1b\[[0-9;]*m//g' | tr -d '\0' | grep -v '^[[:space:]]*$' | head -20
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+      echo "⚠️ 安装日志文件未找到"
+    fi
+  register: final_monitor_output
+  when: not (es_installed.stat.exists and kibana_installed.stat.exists) and elk_install_pid is defined
+
+- name: "显示安装监控完成信息"
+  debug:
+    var: final_monitor_output.stdout_lines
+  when: final_monitor_output is defined and final_monitor_output.stdout_lines is defined
+
+- name: "检查安装脚本最终状态"
+  shell: |
+    echo "=== 📋 安装脚本状态检查 ==="
+    if [ -f "/tmp/elk_install.log" ]; then
+      # 检查是否有错误
+      if grep -i "error\|failed\|无法\|失败" /tmp/elk_install.log >/dev/null 2>&1; then
+        echo "⚠️ 发现可能的错误信息:"
+        grep -i "error\|failed\|无法\|失败" /tmp/elk_install.log | tail -5
+        echo ""
+      fi
+      
+      # 检查是否成功完成 - 使用多种判断标准
+      if grep -q "安装.*完成\|installation.*complete\|Setup completed\|successfully\|启动.*kibana\|kibana.*started\|Kibana server is now running" /tmp/elk_install.log >/dev/null 2>&1; then
+        echo "✅ 安装脚本执行成功"
+        exit 0
+      else
+        # 如果没有明确的完成标志，检查是否有严重错误
+        if grep -qi "fatal\|critical\|cannot\|fail.*start" /tmp/elk_install.log >/dev/null 2>&1; then
+          echo "❌ 发现严重错误，安装失败"
+          exit 1
+        else
+          echo "⚠️ 安装状态不明确，需要进一步验证"
+          echo "最后10行有效日志:"
+          tail -20 /tmp/elk_install.log | sed 's/\x1b\[[0-9;]*m//g' | tr -d '\0' | grep -v '^[[:space:]]*$' | tail -10
+          exit 2  # 使用不同的退出码表示状态不明确
+        fi
+      fi
+    else
+      echo "❌ 安装日志文件不存在"
+      exit 1
+    fi
+  register: script_status_check
+  failed_when: false  # 不让这个任务失败，只是收集信息
+  when: not (es_installed.stat.exists and kibana_installed.stat.exists) and elk_install_pid is defined
+
+- name: "显示脚本状态检查结果"  
+  debug:
+    var: script_status_check.stdout_lines
+  when: script_status_check is defined and script_status_check.stdout_lines is defined
+
+- name: "诊断安装日志问题"
+  shell: |
+    if [ -f "/tmp/elk_install.log" ]; then
+      echo "=== 📊 日志文件诊断 ==="
+      echo "文件大小: $(ls -lh /tmp/elk_install.log | awk '{print $5}')"
+      echo "文件行数: $(wc -l < /tmp/elk_install.log)"
+      echo "空字符数量: $(grep -c '\x00' /tmp/elk_install.log || echo 0)"
+      echo "最后修改时间: $(stat -c %y /tmp/elk_install.log)"
+      echo ""
+      echo "=== 脚本进程状态 ==="
+      if pgrep -f "{{ install_script_path }}" > /dev/null; then
+        echo "⏳ 安装脚本仍在运行"
+        echo "进程信息: $(ps aux | grep {{ install_script_path }} | grep -v grep)"
+      else
+        echo "⚠️ 安装脚本进程已结束"
+      fi
+      echo ""
+      echo "=== 最后有效日志内容 ==="
+      tail -30 /tmp/elk_install.log | tr -d '\0' | grep -v '^[[:space:]]*$' | tail -10
+    else
+      echo "❌ 日志文件不存在"
+    fi
+  register: log_diagnosis
+  when: 
+    - script_status_check is defined 
+    - script_status_check.rc is defined
+    - script_status_check.rc != 0
+
+- name: "显示日志诊断结果"
+  debug:
+    var: log_diagnosis.stdout_lines
+  when: log_diagnosis is defined and log_diagnosis.stdout_lines is defined
+
+- name: "检查安装是否成功"
+  debug:
+    msg: |
+      ⚠️ 注意：安装脚本状态检查未通过
+      - 脚本退出码: {{ script_status_check.rc | default('未知') }}
+      - 状态: {{ '严重错误' if script_status_check.rc == 1 else '状态不明确，继续验证' if script_status_check.rc == 2 else '其他问题' }}
+      - 继续进行服务状态验证以确认实际安装结果...
+  when: 
+    - script_status_check is defined 
+    - script_status_check.rc is defined
+    - script_status_check.rc != 0
+
+- name: "安装脚本严重失败检查"
+  fail:
+    msg: |
+      ELK Stack安装严重失败！
+      - 检测到致命错误，无法继续
+      - 请检查安装日志: /tmp/elk_install.log
+      - 建议重新运行安装或手动排查问题
+  when: 
+    - script_status_check is defined 
+    - script_status_check.rc is defined
+    - script_status_check.rc == 1
+
+- name: "等待Elasticsearch服务启动(下载安装包，时间较久)"
+  wait_for:
+    host: "{{ network_host if network_host != '0.0.0.0' else ansible_default_ipv4.address }}"
+    port: "{{ http_port }}"
+    delay: 30
+    timeout: 900
+    state: started
+  register: es_port_check
+
+- name: "等待Kibana服务启动(下载安装包，时间较久)"
+  wait_for:
+    host: "{{ network_host if network_host != '0.0.0.0' else ansible_default_ipv4.address }}"
+    port: "{{ kibana_port }}"
+    delay: 30
+    timeout: 900
+    state: started
+  register: kibana_port_check
+
+- name: "验证Elasticsearch HTTPS响应"
+  uri:
+    url: "https://{{ ansible_default_ipv4.address }}:{{ http_port }}"
+    method: GET
+    user: "elastic"
+    password: "{{ es_password }}"
+    force_basic_auth: yes
+    validate_certs: no  # 忽略自签证书
+    status_code: [200, 401, 403]
+    timeout: 30
+  register: es_https_check
+  retries: 5
+  delay: 15
+  ignore_errors: true
+
+- name: "显示Elasticsearch连接结果"
+  debug:
+    msg: |
+      Elasticsearch HTTPS检查结果:
+      - URL: https://{{ ansible_default_ipv4.address }}:{{ http_port }}
+      - 状态码: {{ es_https_check.status | default('连接失败') }}
+      - 响应: {{ '成功' if es_https_check.status == 200 else '需要认证或权限问题' if es_https_check.status in [401, 403] else '连接失败' }}
+
+- name: "验证Kibana HTTP响应"
+  uri:
+    url: "http://{{ ansible_default_ipv4.address }}:{{ kibana_port }}"
+    method: GET
+    status_code: [200, 302, 401]
+    timeout: 30
+  register: kibana_http_check
+  retries: 5
+  delay: 15
+  ignore_errors: true
+
+- name: "显示Kibana连接结果"
+  debug:
+    msg: |
+      Kibana HTTP检查结果:
+      - URL: http://{{ ansible_default_ipv4.address }}:{{ kibana_port }}
+      - 状态码: {{ kibana_http_check.status | default('连接失败') }}
+      - 响应: {{ '成功' if kibana_http_check.status in [200, 302] else '需要认证' if kibana_http_check.status == 401 else '连接失败' }}
+
+- name: "检查Elasticsearch服务状态"
+  systemd:
+    name: elasticsearch
+  register: es_service_status
+  become: true
+
+- name: "检查Kibana服务状态"
+  systemd:
+    name: kibana
+  register: kibana_service_status
+  become: true
+
+- name: "设置IP地址配置"
+  set_fact:
+    internal_ip: "{{ elastic_intranet_ip }}"
+    public_ip: "{{ elastic_public_ip }}"
+
+- name: "清理安装脚本"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ install_script_path }}"
+    - "{{ init_script_path }}"
+  become: true
+
+- name: "显示安装完成信息"
+  debug:
+    msg: |
+      =========================================
+      ELK Stack 安装完成！
+      =========================================
+      
+      安装路径:
+      - Elasticsearch: {{ es_home }}
+      - Kibana: {{ kibana_home }}
+      
+      服务状态:
+      - Elasticsearch: {{ 'Running' if es_service_status.status.ActiveState == 'active' else 'Not Running' }}
+      - Kibana: {{ 'Running' if kibana_service_status.status.ActiveState == 'active' else 'Not Running' }}
+      
+      访问地址:
+      - Elasticsearch HTTPS: https://{{ public_ip }}:{{ http_port }}
+      - Kibana HTTP: http://{{ public_ip }}:{{ kibana_port }}
+      
+      连接测试:
+      - ES状态: {{ '✓ 连接成功' if es_https_check.status == 200 else '⚠ 需要检查' if es_https_check.status in [401, 403] else '✗ 连接失败' }}
+      - Kibana状态: {{ '✓ 连接成功' if kibana_http_check.status in [200, 302] else '⚠ 需要检查' if kibana_http_check.status == 401 else '✗ 连接失败' }}
+      
+      认证信息:
+      - Elasticsearch用户: elastic
+      - Elasticsearch密码: {{ es_password }}
+      - Kibana用户: elastic (登录Kibana使用)
+      - Kibana密码: {{ es_password }}
+      
+      服务管理命令:
+      - 重启ES: systemctl restart elasticsearch
+      - 重启Kibana: systemctl restart kibana
+      - 查看ES状态: systemctl status elasticsearch
+      - 查看Kibana状态: systemctl status kibana
+      - 查看ES日志: journalctl -u elasticsearch -f
+      - 查看Kibana日志: journalctl -u kibana -f
+      
+      索引初始化: ✓ 已完成
+      日志索引: access_logs, block_logs, error_logs, api_logs
+      生命周期: {{ expired_days }}天自动删除
+      
+      密码文件: {{ es_home }}/elastic_credentials.txt
+      =========================================

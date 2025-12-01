@@ -1,0 +1,10 @@
+---
+# API-Go handlers
+
+- name: restart api-go
+  shell: |
+    cd {{ api_go_work_dir }} && \
+    docker compose restart
+  become: true
+  args:
+    executable: /bin/bash

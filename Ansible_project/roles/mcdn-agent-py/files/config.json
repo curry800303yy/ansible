@@ -1,0 +1,20 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8090
+  },
+  "app": {
+    "admin_api_url": "http://markcdn-admin-api:8080",
+    "console_api_url": "http://markcdn-console-api:8081"
+  },
+  "log": {
+    "level": "INFO",
+    "file": "log/mcdn-agent.log"
+  },
+  "nginx": {
+    "path": "/opt/nginx",
+    "config_path": "/opt/nginx/conf",
+    "cert_path": "/opt/nginx/cert",
+    "container_name": "nginx"
+  }
+}

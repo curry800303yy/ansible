@@ -1,0 +1,366 @@
+---
+- name: Ensure monitor installation directory exists
+  file:
+    path: "{{ monitor_temp_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Copy monitor installation script
+  copy:
+    src: install.sh
+    dest: "{{ monitor_temp_dir }}/install.sh"
+    mode: '0755'
+  notify: cleanup monitor installation
+
+- name: Copy monitoring dashboard JSON files
+  copy:
+    src: 监控图标json/
+    dest: "{{ monitor_temp_dir }}/监控图标json/"
+    mode: '0644'
+  notify: cleanup monitor installation
+
+# MySQL认证修复已内置在Ansible任务中，无需额外脚本
+
+# ========================================
+# 运行安装脚本（包含MySQL/MariaDB安装）
+# ========================================
+
+- name: Run monitor installation script
+  shell: |
+    cd {{ monitor_temp_dir }}
+    ./install.sh --auto
+  register: monitor_install_result
+  changed_when: true
+  become: true
+  ignore_errors: true
+  environment:
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+- name: Display installation result
+  debug:
+    var: monitor_install_result.stdout_lines
+  when: monitor_install_result.stdout_lines is defined
+
+# ========================================
+# 安装后强制修复MySQL/MariaDB认证
+# ========================================
+
+- name: Wait for MariaDB service to be ready after installation
+  wait_for:
+    port: 3306
+    host: localhost
+    delay: 10
+    timeout: 120
+
+- name: Verify MariaDB service is running
+  systemd:
+    name: mariadb
+    state: started
+    enabled: true
+  become: true
+
+- name: Force fix MySQL authentication - always run after install
+  shell: |
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ monitor_db_password }}'; FLUSH PRIVILEGES;"
+  become: true
+  register: mysql_auth_fix
+  ignore_errors: true
+
+- name: Create 127.0.0.1 user for N9E if needed
+  shell: |
+    mysql -u root -p{{ monitor_db_password }} -e "CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '{{ monitor_db_password }}'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION; FLUSH PRIVILEGES;"
+  become: true
+  register: mysql_127_user
+  ignore_errors: true
+
+- name: Test MySQL authentication after fix
+  shell: mysql -u root -p{{ monitor_db_password }} -e "SELECT 'MySQL authentication works' AS status;"
+  become: true
+  register: mysql_final_test
+  ignore_errors: true
+
+- name: Display MySQL authentication status
+  debug:
+    msg:
+      - "MySQL authentication fix: {{ 'SUCCESS' if mysql_auth_fix.rc == 0 else 'FAILED' }}"
+      - "127.0.0.1 user creation: {{ 'SUCCESS' if mysql_127_user.rc == 0 else 'FAILED' }}"
+      - "Final authentication test: {{ 'SUCCESS' if mysql_final_test.rc == 0 else 'FAILED' }}"
+
+# ========================================
+# 配置N9E（夜莺）数据库连接
+# ========================================
+
+- name: Check N9E configuration file exists
+  stat:
+    path: /opt/etc/config.toml
+  register: n9e_config_file
+
+- name: Backup N9E configuration before modification
+  copy:
+    src: /opt/etc/config.toml
+    dest: /opt/etc/config.toml.backup
+    remote_src: true
+    backup: true
+  become: true
+  when: n9e_config_file.stat.exists
+
+- name: Fix N9E database configuration to use localhost
+  lineinfile:
+    path: /opt/etc/config.toml
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: true
+  become: true
+  loop:
+    - { regexp: '^(\s*)password\s*=\s*".*"', line: '\1password = "{{ monitor_db_password }}"' }
+    - { regexp: '^(\s*)user\s*=\s*".*"', line: '\1user = "root"' }
+    - { regexp: '^(\s*)host\s*=\s*".*"', line: '\1host = "localhost"' }
+    - { regexp: '^(\s*)port\s*=\s*.*', line: '\1port = 3306' }
+  when: n9e_config_file.stat.exists
+  notify: restart n9e
+
+- name: Test MySQL connection with N9E credentials
+  shell: mysql -u root -p{{ monitor_db_password }} -e "USE n9e_v6; SHOW TABLES LIMIT 5;"
+  become: true
+  register: mysql_n9e_test
+  ignore_errors: true
+
+- name: Display MySQL N9E database test
+  debug:
+    msg: "N9E database connectivity: {{ 'SUCCESS' if mysql_n9e_test.rc == 0 else 'FAILED' }}"
+
+# 确保N9E数据库存在并且权限正确
+- name: Ensure N9E database exists with proper permissions
+  shell: |
+    mysql -u root -p{{ monitor_db_password }} << 'EOF'
+    CREATE DATABASE IF NOT EXISTS n9e_v6;
+    GRANT ALL PRIVILEGES ON n9e_v6.* TO 'root'@'localhost';
+    GRANT ALL PRIVILEGES ON n9e_v6.* TO 'root'@'127.0.0.1';
+    FLUSH PRIVILEGES;
+    EOF
+  become: true
+  register: db_setup_result
+  ignore_errors: true
+
+- name: Display database setup result
+  debug:
+    msg: "Database setup: {{ 'SUCCESS' if db_setup_result.rc == 0 else 'FAILED' }}"
+
+# ========================================
+# 深度调试MySQL认证和N9E配置
+# ========================================
+
+- name: Debug MySQL authentication status
+  block:
+    - name: Check MySQL user authentication method
+      shell: |
+        mysql -u root -p{{ monitor_db_password }} -e "SELECT user, host, plugin, authentication_string FROM mysql.user WHERE user='root' AND host='localhost';"
+      become: true
+      register: mysql_user_check
+      ignore_errors: true
+
+    - name: Display MySQL user information
+      debug:
+        var: mysql_user_check.stdout_lines
+
+    - name: Check N9E configuration file content
+      shell: cat /opt/etc/config.toml | grep -A 10 -B 5 -E "(user|password|host|port|database)"
+      register: n9e_config_content
+      ignore_errors: true
+
+    - name: Display N9E database configuration
+      debug:
+        var: n9e_config_content.stdout_lines
+
+    - name: Test direct database connection as N9E would do
+      shell: |
+        mysql -h 127.0.0.1 -u root -p{{ monitor_db_password }} -e "SELECT 'Connection successful' AS status;"
+      register: direct_db_test
+      ignore_errors: true
+
+    - name: Display direct database test result
+      debug:
+        msg: "Direct database test (as N9E): {{ 'SUCCESS' if direct_db_test.rc == 0 else 'FAILED' }}"
+        
+    - name: Show actual error if direct test failed
+      debug:
+        var: direct_db_test.stderr
+      when: direct_db_test.rc != 0
+
+  when: true  # Always run debug tasks
+
+# ========================================
+# 最终验证和N9E服务重启
+# ========================================
+
+- name: Final verification - test both localhost and 127.0.0.1 connections
+  block:
+    - name: Test localhost connection
+      shell: mysql -u root -p{{ monitor_db_password }} -e "USE n9e_v6; SELECT 'localhost OK' AS status;"
+      register: verify_localhost
+      ignore_errors: true
+
+    - name: Test 127.0.0.1 connection
+      shell: mysql -h 127.0.0.1 -u root -p{{ monitor_db_password }} -e "USE n9e_v6; SELECT '127.0.0.1 OK' AS status;"
+      register: verify_127
+      ignore_errors: true
+
+    - name: Display final verification results
+      debug:
+        msg:
+          - "Final localhost test: {{ 'SUCCESS' if verify_localhost.rc == 0 else 'FAILED' }}"
+          - "Final 127.0.0.1 test: {{ 'SUCCESS' if verify_127.rc == 0 else 'FAILED' }}"
+
+  become: true
+
+- name: Force restart N9E service after MySQL fixes
+  systemd:
+    name: n9e
+    state: restarted
+  become: true
+  ignore_errors: true
+
+# ========================================
+# 服务管理和状态检查
+# ========================================
+
+# MySQL认证修复已在上面处理
+
+- name: Ensure N9E service is running
+  systemd:
+    name: n9e
+    state: started
+    enabled: true
+  become: true
+
+- name: Wait for N9E service to be ready
+  wait_for:
+    port: "{{ n9e_port }}"
+    host: localhost
+    delay: 10
+    timeout: 120
+  ignore_errors: true
+
+- name: Check N9E service status
+  systemd:
+    name: n9e
+  register: n9e_status
+  become: true
+
+- name: Display N9E service status
+  debug:
+    msg: "N9E service: {{ n9e_status.status.ActiveState | default('unknown') }}"
+
+- name: Verify N9E service is actually running and restart if failed
+  block:
+    - name: Check if N9E process is running
+      shell: pgrep -f "/opt/n9e" || echo "NOT_RUNNING"
+      register: n9e_process_check
+      become: true
+
+    - name: Restart N9E service if not running properly
+      systemd:
+        name: n9e
+        state: restarted
+      become: true
+      when: "'NOT_RUNNING' in n9e_process_check.stdout"
+
+    - name: Wait for N9E to start after restart
+      wait_for:
+        port: "{{ n9e_port }}"
+        host: localhost
+        delay: 10
+        timeout: 60
+      when: "'NOT_RUNNING' in n9e_process_check.stdout"
+
+    - name: Final N9E status check
+      systemd:
+        name: n9e
+      register: n9e_final_status
+      become: true
+
+    - name: Display final N9E status
+      debug:
+        msg: "Final N9E service status: {{ n9e_final_status.status.ActiveState | default('unknown') }}"
+
+  when: n9e_status.status.ActiveState != 'active'
+
+- name: Ensure Prometheus service is running
+  systemd:
+    name: prometheus
+    state: started
+    enabled: true
+  become: true
+
+# ========================================
+# 显示访问信息
+# ========================================
+
+- name: Display access information
+  debug:
+    msg:
+      - "=========================================="
+      - "监控系统安装完成"
+      - "=========================================="
+      - "Prometheus: http://{{ ansible_default_ipv4.address }}:{{ prometheus_port }}"
+      - "  用户名: {{ prometheus_user }}"
+      - "  密码: {{ prometheus_password }}"
+      - "N9E (夜莺): http://{{ ansible_default_ipv4.address }}:{{ n9e_port }}"
+      - "  用户名: {{ n9e_user }}"
+      - "  密码: {{ n9e_password }}"
+      - "MariaDB root密码: {{ monitor_db_password }}"
+      - "=========================================="
+      - "⚠️  请立即修改默认密码！"
+
+# ========================================
+# 最终MySQL修复 - 使用用户验证过的方法
+# ========================================
+
+- name: Final MySQL authentication fix - user tested method
+  shell: |
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ monitor_db_password }}'; FLUSH PRIVILEGES;"
+  become: true
+  register: final_mysql_fix
+  ignore_errors: true
+
+- name: Display final MySQL fix result
+  debug:
+    msg: "Final MySQL fix: {{ 'SUCCESS' if final_mysql_fix.rc == 0 else 'FAILED' }}"
+
+- name: Final N9E service restart
+  systemd:
+    name: n9e
+    state: restarted
+  become: true
+  register: final_n9e_restart
+  ignore_errors: true
+
+- name: Wait for N9E to start after final restart
+  wait_for:
+    port: "{{ n9e_port }}"
+    host: localhost
+    delay: 5
+    timeout: 60
+  ignore_errors: true
+
+- name: Check final N9E service status
+  systemd:
+    name: n9e
+  register: final_n9e_status
+  become: true
+
+- name: Display final deployment status
+  debug:
+    msg:
+      - "=========================================="
+      - "最终部署状态"
+      - "=========================================="
+      - "MySQL最终修复: {{ 'SUCCESS' if final_mysql_fix.rc == 0 else 'FAILED' }}"
+      - "N9E服务重启: {{ 'SUCCESS' if final_n9e_restart.state == 'started' else 'FAILED' }}"
+      - "N9E服务状态: {{ final_n9e_status.status.ActiveState | default('unknown') }}"
+      - "=========================================="
+      - "{% if final_n9e_status.status.ActiveState == 'active' %}✅ N9E监控系统部署成功！{% else %}❌ N9E服务可能需要手动检查{% endif %}"
+      - "访问地址: http://{{ ansible_default_ipv4.address }}:{{ n9e_port }}"
+      - "用户名: {{ n9e_user }}"
+      - "密码: {{ n9e_password }}"
+      - "=========================================="

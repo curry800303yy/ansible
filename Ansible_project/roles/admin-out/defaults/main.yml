@@ -1,0 +1,17 @@
+---
+# Admin-Out 管理前端默认变量
+
+# 工作目录
+admin_out_work_dir: "/opt/admin-out"
+
+# Docker 镜像配置
+admin_out_image_name: "103.253.14.232/prod/admin-out"
+
+# 容器配置
+admin_out_container_name: "admin-out"
+
+# Docker 网络
+docker_network_name: "open-network"
+
+# 清理配置
+admin_out_cleanup_tar: true

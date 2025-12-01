@@ -1,0 +1,37 @@
+upstream console.domain.com{
+  server console-out:80;
+}
+
+server {
+  listen      91;
+  server_name {{ main_server_ip }};
+
+  error_log  /var/log/nginx/console.ip-error.log debug;
+  access_log /var/log/nginx/console.ip-access.log;
+
+  location /basic-api {
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # 后台接口地址
+    proxy_pass http://markcdn-console-api:8081;
+    rewrite "^/basic-api/(.*)$" /$1 break;
+    proxy_redirect default;
+  }
+
+  location /public/ {
+    proxy_pass http://admin.api;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host:$server_port;
+  }
+
+  location / {
+    proxy_pass http://console.domain.com;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Host $host:$server_port;
+  }
+}
