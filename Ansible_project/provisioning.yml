@@ -1,93 +1,64 @@
-# provisioning.yml
-# 負責在 VMware 上創建所有 VM
 - name: 1. Provision CDN Infrastructure on VMware
-  hosts: localhost 
+  hosts: localhost
   connection: local
   gather_facts: no
-  
-  # 這些變數由 AWX 憑證自動注入
+
   vars:
-    # ⭐️ 替換為您的 Linux 範本名稱 ⭐️
-    vm_template: "My_Base_Ubuntu_Template" 
-    # ⭐️ 替換為您的資料中心名稱 ⭐️
-    vm_datacenter: "DC02"  
-    # ⭐️ 替換為您的叢集名稱 ⭐️
-    #vm_cluster: "My_Cluster"        
-    # ⭐️ 替換為您的網路名稱 ⭐️
+    vm_template: "My_Base_Ubuntu_Template"
+    vm_datacenter: "DC02"
     vm_network: "VM Network"
-    vcenter_host: "192.168.32.110"   # 填寫您的 vCenter IP
+    vcenter_host: "192.168.32.110"
     vcenter_user: "stephen_yang@ysflco.com"
     vcenter_pass: "P25Uz9-P25Uz9"
-    # ⭐️ 必須新增此變數並填寫 ESXi 主機名稱 ⭐️
     target_esxi_host: "192.168.34.242"
-    target_ssh_user: "ansible" # ⭐️ 替換為新 VM 的實際登錄用戶名 ⭐️
-    target_ssh_pass: "test1234" # ⭐️ 替換為新 VM 的實際密碼 ⭐️        
-    
+    target_ssh_user: "ansible"
+    target_ssh_pass: "test1234"
+
   tasks:
-    - name: Create required VMs on specified ESXi host
+    - name: Create required VMs
       community.vmware.vmware_guest:
         name: "{{ item.name }}"
-        # vCenter 連線資訊
-        hostname: "{{ vcenter_host }}" 
+        hostname: "{{ vcenter_host }}"
         username: "{{ vcenter_user }}"
         password: "{{ vcenter_pass }}"
         validate_certs: no
-
-        template: "{{ vm_template }}" # 必須指定從哪個範本克隆
-        
-        # ⭐️ 僅使用 Datacenter 和 ESXi 主機來定位 ⭐️
-        datacenter: "{{ vm_datacenter }}" 
-        esxi_hostname: "{{ target_esxi_host }}" # 這是您要強制部署的主機
-        #cluster: "{{ vm_cluster }}"
+        template: "{{ vm_template }}"
+        datacenter: "{{ vm_datacenter }}"
+        esxi_hostname: "{{ target_esxi_host }}"
         folder: "/"
         networks:
           - name: "{{ vm_network }}"
-            # 確保您的範本設定使用 DHCP 或這裡設定的 IP
         hardware:
           memory_mb: "{{ item.mem }}"
           num_cpus: "{{ item.cpu }}"
-        
       register: new_vms
       loop:
-        # 創建 VM 列表
         - { name: 'cdn-node-01', group: 'cdn_nodes', mem: 4096, cpu: 2 }
-        # - { name: 'api-backend-01', group: 'api_backends', mem: 2048, cpu: 1 }
-        # - { name: 'user-frontend-01', group: 'user_frontends', mem: 2048, cpu: 1 }
 
-    - name: Wait 120 seconds for VM networking to come up
-      ansible.builtin.pause:
+    - name: Wait 120 seconds for networking
+      pause:
         seconds: 120
-      
-    - name: Wait for new VMs to be reachable via SSH
-      ansible.builtin.wait_for_connection:
-        delay: 5 
-        timeout: 300 
-      
-      # ⭐️ 修正 1：delegate_to 變數引用 (使用修正後 loop 的 item 結構) ⭐️
-      # 修正：直接使用 item.ipv4_address，因為 loop 已經處理了結構
-      delegate_to: "{{ item.ipv4_address }}" 
-      
-      # ⭐️ 修正 2：核心修正 - 替換 json_query 為 Jinja2 內建語法 ⭐️
-      # 處理 new_vms.results 結構，並過濾掉沒有 IP 的 VM
-      loop: "{{ new_vms.results | map(attribute='instance') | selectattr('ipv4_address', 'defined') | list }}" 
-      
-      # ❌ 刪除 when 語句：因為過濾條件已經在 loop 中處理 ❌
-      
-    - name: Dynamically add new VMs to AWX Inventory
-      ansible.builtin.add_host:
-        # 修正：使用 item.ipv4_address 
-        hostname: "{{ item.ipv4_address }}"
-        
-        # 修正：正確提取 loop 中 item.item.group 變數
-        groupname: "{{ item.item.group }}" 
-        
-        # 修正：使用 Playbook vars 定義的 SSH 憑證
+
+    - name: Wait for SSH ready
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+      loop: "{{ new_vms.results }}"
+      loop_control:
+        loop_var: vm
+      vars:
+        ansible_host: "{{ vm.instance.ipv4_address }}"
         ansible_user: "{{ target_ssh_user }}"
         ansible_password: "{{ target_ssh_pass }}"
-        
-      delegate_to: localhost
-      
-      # ⭐️ 修正 3：核心修正 - 替換 json_query 為 Jinja2 內建語法 ⭐️
-      loop: "{{ new_vms.results | map(attribute='instance') | selectattr('ipv4_address', 'defined') | list }}" 
-      
-      # ❌ 刪除 when 語句 ❌
+      when: vm.instance.ipv4_address is defined
+
+    - name: Add new VMs to inventory
+      add_host:
+        hostname: "{{ vm.instance.ipv4_address }}"
+        groupname: "{{ vm.item.group }}"
+        ansible_user: "{{ target_ssh_user }}"
+        ansible_password: "{{ target_ssh_pass }}"
+      loop: "{{ new_vms.results }}"
+      loop_control:
+        loop_var: vm
+      when: vm.instance.ipv4_address is defined
