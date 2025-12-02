@@ -39,6 +39,7 @@
         datacenter: "{{ vm_datacenter }}" 
         esxi_hostname: "{{ target_esxi_host }}" # 這是您要強制部署的主機
         #cluster: "{{ vm_cluster }}"
+        folder: "/"
         networks:
           - name: "{{ vm_network }}"
             # 確保您的範本設定使用 DHCP 或這裡設定的 IP
