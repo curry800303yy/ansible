@@ -15,7 +15,7 @@
     #vm_cluster: "My_Cluster"        
     # ⭐️ 替換為您的網路名稱 ⭐️
     vm_network: "VM Network"
-    vcenter_host: "https://vcenter.ysflco.com/"   # 填寫您的 vCenter IP
+    vcenter_host: "192.168.32.110"   # 填寫您的 vCenter IP
     vcenter_user: "stephen_yang@ysflco.com"
     vcenter_pass: "P25Uz9-P25Uz9"
     # ⭐️ 必須新增此變數並填寫 ESXi 主機名稱 ⭐️
