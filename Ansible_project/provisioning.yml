@@ -51,8 +51,8 @@
       loop:
         # 創建 VM 列表
         - { name: 'cdn-node-01', group: 'cdn_nodes', mem: 4096, cpu: 2 }
-        - { name: 'api-backend-01', group: 'api_backends', mem: 2048, cpu: 1 }
-        - { name: 'user-frontend-01', group: 'user_frontends', mem: 2048, cpu: 1 }
+        # - { name: 'api-backend-01', group: 'api_backends', mem: 2048, cpu: 1 }
+        # - { name: 'user-frontend-01', group: 'user_frontends', mem: 2048, cpu: 1 }
 
     - name: Wait 120 seconds for VM networking to come up
       ansible.builtin.pause:
