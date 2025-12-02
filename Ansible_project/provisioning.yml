@@ -60,22 +60,34 @@
       
     - name: Wait for new VMs to be reachable via SSH
       ansible.builtin.wait_for_connection:
-        delay: 5 # 每 5 秒檢查一次
-        timeout: 300 # 最長等待 5 分鐘
-      # 假設您的 VM 範本設定了 DHCP，Ansible 會嘗試連線到 VM 的 IP
-      delegate_to: "{{ item.instance.ipv4_address }}" 
-      loop: "{{ new_vms.results | json_query('[].instance') }}" 
-      when: item.instance.ipv4_address is defined
-
+        delay: 5 
+        timeout: 300 
+      
+      # ⭐️ 修正 1：delegate_to 變數引用 (使用修正後 loop 的 item 結構) ⭐️
+      # 修正：直接使用 item.ipv4_address，因為 loop 已經處理了結構
+      delegate_to: "{{ item.ipv4_address }}" 
+      
+      # ⭐️ 修正 2：核心修正 - 替換 json_query 為 Jinja2 內建語法 ⭐️
+      # 處理 new_vms.results 結構，並過濾掉沒有 IP 的 VM
+      loop: "{{ new_vms.results | map(attribute='instance') | selectattr('ipv4_address', 'defined') | list }}" 
+      
+      # ❌ 刪除 when 語句：因為過濾條件已經在 loop 中處理 ❌
+      
     - name: Dynamically add new VMs to AWX Inventory
       ansible.builtin.add_host:
-        hostname: "{{ item.instance.ipv4_address }}"
+        # 修正：使用 item.ipv4_address 
+        hostname: "{{ item.ipv4_address }}"
+        
+        # 修正：正確提取 loop 中 item.item.group 變數
         groupname: "{{ item.item.group }}" 
         
-        # ⭐️ 修正為引用定義的變數 ⭐️
+        # 修正：使用 Playbook vars 定義的 SSH 憑證
         ansible_user: "{{ target_ssh_user }}"
         ansible_password: "{{ target_ssh_pass }}"
         
       delegate_to: localhost
-      loop: "{{ new_vms.results | json_query('[].instance') }}" 
-      when: item.instance.ipv4_address is defined
+      
+      # ⭐️ 修正 3：核心修正 - 替換 json_query 為 Jinja2 內建語法 ⭐️
+      loop: "{{ new_vms.results | map(attribute='instance') | selectattr('ipv4_address', 'defined') | list }}" 
+      
+      # ❌ 刪除 when 語句 ❌
