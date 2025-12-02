@@ -10,25 +10,28 @@
     # ⭐️ 替換為您的 Linux 範本名稱 ⭐️
     vm_template: "My_Base_Ubuntu_Template" 
     # ⭐️ 替換為您的資料中心名稱 ⭐️
-    #vm_datacenter: "DC02"  
+    vm_datacenter: "DC02"  
     # ⭐️ 替換為您的叢集名稱 ⭐️
     #vm_cluster: "My_Cluster"        
     # ⭐️ 替換為您的網路名稱 ⭐️
-    vm_network: "VM Network"               
+    vm_network: "VM Network"
+    # ⭐️ 必須新增此變數並填寫 ESXi 主機名稱 ⭐️
+    target_esxi_host: "192.168.34.242"
+    target_ssh_user: "ansible" # ⭐️ 替換為新 VM 的實際登錄用戶名 ⭐️
+    target_ssh_pass: "test1234" # ⭐️ 替換為新 VM 的實際密碼 ⭐️        
     
   tasks:
-    - name: Create required VMs (CDN Node, API Backend, Frontend)
+    - name: Create required VMs on specified ESXi host
       community.vmware.vmware_guest:
-        # AWX 會自動將您的 API 憑證 (Username/Password/Host) 傳遞給這裡
-        hostname: "{{ tower_host }}"
-        username: "{{ tower_username }}"
-        password: "{{ tower_password }}"
-        validate_certs: no # 在 Lab 環境中通常設置為 no
+        # vCenter 連線資訊
+        hostname: "{{ tower_env.tower_job_template_credential_0_host }}"
+        username: "{{ tower_env.tower_job_template_credential_0_username }}"
+        password: "{{ tower_env.tower_job_template_credential_0_password }}"
+        validate_certs: no
         
-        name: "{{ item.name }}"
-        state: poweredon
-        template: "{{ vm_template }}"
-        #datacenter: "{{ vm_datacenter }}"
+        # ⭐️ 僅使用 Datacenter 和 ESXi 主機來定位 ⭐️
+        datacenter: "{{ vm_datacenter }}" 
+        esxi_hostname: "{{ target_esxi_host }}" # 這是您要強制部署的主機
         #cluster: "{{ vm_cluster }}"
         networks:
           - name: "{{ vm_network }}"
@@ -54,5 +57,18 @@
         timeout: 300 # 最長等待 5 分鐘
       # 假設您的 VM 範本設定了 DHCP，Ansible 會嘗試連線到 VM 的 IP
       delegate_to: "{{ item.instance.ipv4_address }}" 
+      loop: "{{ new_vms.results | json_query('[].instance') }}" 
+      when: item.instance.ipv4_address is defined
+
+    - name: Dynamically add new VMs to AWX Inventory
+      ansible.builtin.add_host:
+        hostname: "{{ item.instance.ipv4_address }}"
+        groupname: "{{ item.item.group }}" 
+        
+        # ⭐️ 修正為引用定義的變數 ⭐️
+        ansible_user: "{{ target_ssh_user }}"
+        ansible_password: "{{ target_ssh_pass }}"
+        
+      delegate_to: localhost
       loop: "{{ new_vms.results | json_query('[].instance') }}" 
       when: item.instance.ipv4_address is defined
