@@ -26,11 +26,14 @@
   tasks:
     - name: Create required VMs on specified ESXi host
       community.vmware.vmware_guest:
+        name: "{{ item.name }}"
         # vCenter 連線資訊
         hostname: "{{ vcenter_host }}" 
         username: "{{ vcenter_user }}"
         password: "{{ vcenter_pass }}"
         validate_certs: no
+
+        template: "{{ vm_template }}" # 必須指定從哪個範本克隆
         
         # ⭐️ 僅使用 Datacenter 和 ESXi 主機來定位 ⭐️
         datacenter: "{{ vm_datacenter }}" 
