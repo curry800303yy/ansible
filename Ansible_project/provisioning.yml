@@ -1,4 +1,4 @@
-# provisioning.yml
+g# provisioning.yml
 # 負責在 VMware 上創建所有 VM
 - name: 1. Provision CDN Infrastructure on VMware
   hosts: localhost 
