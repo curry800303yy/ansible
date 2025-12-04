@@ -1,58 +1,69 @@
+<<<<<<< HEAD
 g# provisioning.yml
 # 負責在 VMware 上創建所有 VM
+=======
+>>>>>>> cc838dccf5bb464333ddfa8f469742c40592e132
 - name: 1. Provision CDN Infrastructure on VMware
-  hosts: localhost 
+  hosts: localhost
   connection: local
   gather_facts: no
-  
-  # 這些變數由 AWX 憑證自動注入
+
   vars:
-    # ⭐️ 替換為您的 Linux 範本名稱 ⭐️
-    vm_template: "My_Base_Ubuntu_Template" 
-    # ⭐️ 替換為您的資料中心名稱 ⭐️
-    #vm_datacenter: "DC02"  
-    # ⭐️ 替換為您的叢集名稱 ⭐️
-    #vm_cluster: "My_Cluster"        
-    # ⭐️ 替換為您的網路名稱 ⭐️
-    vm_network: "VM Network"               
-    
+    vm_template: "My_Base_Ubuntu_Template"
+    vm_datacenter: "DC02"
+    vm_network: "VM Network"
+    vcenter_host: "192.168.32.110"
+    vcenter_user: "stephen_yang@ysflco.com"
+    vcenter_pass: "P25Uz9-P25Uz9"
+    target_esxi_host: "192.168.34.242"
+    target_ssh_user: "ansible"
+    target_ssh_pass: "test1234"
+
   tasks:
-    - name: Create required VMs (CDN Node, API Backend, Frontend)
+    - name: Create required VMs
       community.vmware.vmware_guest:
-        # AWX 會自動將您的 API 憑證 (Username/Password/Host) 傳遞給這裡
-        hostname: "{{ tower_host }}"
-        username: "{{ tower_username }}"
-        password: "{{ tower_password }}"
-        validate_certs: no # 在 Lab 環境中通常設置為 no
-        
         name: "{{ item.name }}"
-        state: poweredon
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_pass }}"
+        validate_certs: no
         template: "{{ vm_template }}"
-        #datacenter: "{{ vm_datacenter }}"
-        #cluster: "{{ vm_cluster }}"
+        datacenter: "{{ vm_datacenter }}"
+        esxi_hostname: "{{ target_esxi_host }}"
+        folder: "/"
         networks:
           - name: "{{ vm_network }}"
-            # 確保您的範本設定使用 DHCP 或這裡設定的 IP
         hardware:
           memory_mb: "{{ item.mem }}"
           num_cpus: "{{ item.cpu }}"
-        
       register: new_vms
       loop:
-        # 創建 VM 列表
         - { name: 'cdn-node-01', group: 'cdn_nodes', mem: 4096, cpu: 2 }
-        - { name: 'api-backend-01', group: 'api_backends', mem: 2048, cpu: 1 }
-        - { name: 'user-frontend-01', group: 'user_frontends', mem: 2048, cpu: 1 }
 
-    - name: Wait 120 seconds for VM networking to come up
-      ansible.builtin.pause:
+    - name: Wait 120 seconds for networking
+      pause:
         seconds: 120
-      
-    - name: Wait for new VMs to be reachable via SSH
-      ansible.builtin.wait_for_connection:
-        delay: 5 # 每 5 秒檢查一次
-        timeout: 300 # 最長等待 5 分鐘
-      # 假設您的 VM 範本設定了 DHCP，Ansible 會嘗試連線到 VM 的 IP
-      delegate_to: "{{ item.instance.ipv4_address }}" 
-      loop: "{{ new_vms.results | json_query('[].instance') }}" 
-      when: item.instance.ipv4_address is defined
+
+    - name: Wait for SSH ready
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+      loop: "{{ new_vms.results }}"
+      loop_control:
+        loop_var: vm
+      vars:
+        ansible_host: "{{ vm.instance.ipv4_address }}"
+        ansible_user: "{{ target_ssh_user }}"
+        ansible_password: "{{ target_ssh_pass }}"
+      when: vm.instance.ipv4_address is defined
+
+    - name: Add new VMs to inventory
+      add_host:
+        hostname: "{{ vm.instance.ipv4_address }}"
+        groupname: "{{ vm.item.group }}"
+        ansible_user: "{{ target_ssh_user }}"
+        ansible_password: "{{ target_ssh_pass }}"
+      loop: "{{ new_vms.results }}"
+      loop_control:
+        loop_var: vm
+      when: vm.instance.ipv4_address is defined
